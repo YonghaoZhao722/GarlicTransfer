@@ -69,15 +69,31 @@ class MetadataSafetyTests(unittest.TestCase):
                 self.generate(root, assets, source, user_id="18c60eaa")
             self.assertFalse((root / "generated.db").exists())
 
-    def test_resized_file_is_rejected(self):
+    def test_resized_file_regenerates_manifest_and_metadata(self):
+        import hashlib
+        import sqlite3
+        from contextlib import closing
+
         with tempfile.TemporaryDirectory() as folder:
             root, assets, source = self.make_case(folder)
-            (assets / str(ENTRY_ID) / "save.bin").write_bytes(b"123456789")
-            with self.assertRaisesRegex(ValueError, "size mismatch"):
-                self.generate(root, assets, source)
-            self.assertFalse((root / "generated.db").exists())
+            payload = b"123456789"
+            (assets / str(ENTRY_ID) / "save.bin").write_bytes(payload)
+            output = self.generate(root, assets, source)
 
-    def test_header_size_mismatch_is_rejected(self):
+            generated = json.loads((root / "generated-manifest.json").read_text())
+            item = generated[str(ENTRY_ID)]["files"][0]
+            self.assertEqual(item["size"], len(payload))
+            self.assertEqual(item["sha256"], hashlib.sha256(payload).hexdigest())
+            self.assertEqual(struct.unpack_from("<Q", bytes.fromhex(item["header"]), 240)[0], len(payload))
+            with closing(sqlite3.connect(output)) as db:
+                sizes = db.execute(
+                    "SELECT actual_size, transfer_size, required_size FROM dir_entry_info_tbl"
+                ).fetchone()
+                savedata_size = db.execute("SELECT size FROM users_savedata_tbl").fetchone()[0]
+            self.assertEqual(sizes, (len(payload), len(payload), len(payload)))
+            self.assertEqual(savedata_size, len(payload))
+
+    def test_stale_header_size_is_regenerated(self):
         with tempfile.TemporaryDirectory() as folder:
             root, assets, source = self.make_case(folder)
             manifest_path = assets / "manifest.json"
@@ -87,8 +103,11 @@ class MetadataSafetyTests(unittest.TestCase):
             manifest["files"][0]["header"] = header.hex()
             manifest[str(ENTRY_ID)]["files"][0]["header"] = header.hex()
             manifest_path.write_text(json.dumps(manifest))
-            with self.assertRaisesRegex(ValueError, "size mismatch"):
-                self.generate(root, assets, source)
+            self.generate(root, assets, source)
+            generated = json.loads((root / "generated-manifest.json").read_text())
+            item = generated[str(ENTRY_ID)]["files"][0]
+            self.assertEqual(item["size"], 8)
+            self.assertEqual(struct.unpack_from("<Q", bytes.fromhex(item["header"]), 240)[0], 8)
 
     def test_header_path_mismatch_is_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -103,19 +122,65 @@ class MetadataSafetyTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "mismatched manifest and GFP5 paths"):
                 self.generate(root, assets, source)
 
-    def test_send_time_resize_is_rejected_before_any_record(self):
+    def test_regional_mismatch_uses_the_payload_title_and_size(self):
+        import sqlite3
+        from contextlib import closing
+
+        with tempfile.TemporaryDirectory() as folder:
+            root, assets, source = self.make_case(folder)
+            wrong_path = f"/user/home/{USER_ID}/savedata_prospero/PPSA00000/"
+            payload_path = f"/user/home/{USER_ID}/savedata_prospero/{TITLE_ID}/"
+            with closing(sqlite3.connect(source)) as db:
+                db.execute(
+                    "UPDATE dir_entry_info_tbl SET path = ?, actual_size = 16, transfer_size = 16, required_size = 16 WHERE id = ?",
+                    (wrong_path, ENTRY_ID),
+                )
+                db.execute(
+                    "INSERT INTO dir_entry_info_tbl VALUES (122, ?, 1, 3, 0, '', '', 8, 8, 8, 0)",
+                    (payload_path,),
+                )
+                db.commit()
+
+            (assets / str(ENTRY_ID) / "save.bin").write_bytes(b"123456789")
+            output = self.generate(root, assets, source)
+            with closing(sqlite3.connect(output)) as db:
+                row = db.execute(
+                    "SELECT id, path, actual_size, transfer_size, required_size FROM dir_entry_info_tbl"
+                ).fetchone()
+                titles = db.execute("SELECT title_id, size FROM users_savedata_tbl").fetchall()
+            self.assertEqual(row, (ENTRY_ID, payload_path, 9, 9, 9))
+            self.assertEqual(titles, [(TITLE_ID, 9)])
+
+    def test_send_time_resize_refreshes_header_manifest_and_metadata(self):
         import os
+        import sqlite3
+        from contextlib import closing
         from unittest.mock import patch
         from poc import dt_source
 
         with tempfile.TemporaryDirectory() as folder:
-            root, assets, _ = self.make_case(folder)
+            root, assets, source = self.make_case(folder)
+            output = self.generate(root, assets, source)
             (assets / str(ENTRY_ID) / "save.bin").write_bytes(b"123456789")
-            with patch.dict(os.environ, {"DT_ASSETS": str(assets), "DT_MANIFEST": str(assets / "manifest.json")}), \
+            environment = {
+                "DT_ASSETS": str(assets),
+                "DT_MANIFEST": str(root / "generated-manifest.json"),
+                "DT_METADATA": str(output),
+            }
+            with patch.dict(os.environ, environment), \
                  patch.object(dt_source, "send_record") as send_record:
-                with self.assertRaisesRegex(ValueError, "size mismatch"):
-                    dt_source.send_save_chunks(None, None, None, 0, 2, ENTRY_ID)
-                send_record.assert_not_called()
+                dt_source.send_save_chunks(None, None, None, 0, 2, ENTRY_ID)
+
+            self.assertEqual(send_record.call_count, 3)
+            header = send_record.call_args_list[0].args[4]
+            self.assertEqual(struct.unpack_from("<Q", header, 240)[0], 9)
+            generated = json.loads((root / "generated-manifest.json").read_text())
+            self.assertEqual(generated[str(ENTRY_ID)]["files"][0]["size"], 9)
+            with closing(sqlite3.connect(output)) as db:
+                sizes = db.execute(
+                    "SELECT actual_size, transfer_size, required_size FROM dir_entry_info_tbl"
+                ).fetchone()
+            self.assertEqual(sizes, (9, 9, 9))
 
 
 if __name__ == "__main__":

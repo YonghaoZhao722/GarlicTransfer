@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import hashlib
 import json
 import re
 import shutil
@@ -35,7 +36,7 @@ def validate_save_owner(files, user_id):
 
 def validate_payload(path, entry_id, item):
     try:
-        header = bytes.fromhex(item["header"])
+        header = bytearray.fromhex(item["header"])
     except (KeyError, ValueError) as exc:
         raise ValueError(f"save file {item.get('file', '')} has an invalid GFP5 header") from exc
     if len(header) != 1304 or struct.unpack_from("<I", header)[0] != 0x35504647:
@@ -45,13 +46,25 @@ def validate_payload(path, entry_id, item):
     if header[276:1300].split(b"\0", 1)[0].decode(errors="strict") != item.get("path"):
         raise ValueError(f"save file {item['file']} has mismatched manifest and GFP5 paths")
     actual_size = path.stat().st_size
-    manifest_size = int(item["size"])
+    if actual_size <= 0:
+        raise ValueError(f"save file {item['file']} is empty")
+    manifest_size = int(item.get("size", 0))
     header_size = struct.unpack_from("<Q", header, 240)[0]
     if actual_size != manifest_size or actual_size != header_size:
-        raise ValueError(
-            f"save file {item['file']} size mismatch: disk={actual_size}, "
-            f"manifest={manifest_size}, GFP5={header_size}; refusing to upload"
+        print(
+            f"[metadata] {item['file']} using disk size {actual_size} "
+            f"(manifest={manifest_size}, GFP5={header_size})",
+            flush=True,
         )
+    struct.pack_into("<Q", header, 240, actual_size)
+    item["header"] = header.hex()
+    item["size"] = actual_size
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        while chunk := stream.read(0x200000):
+            digest.update(chunk)
+    item["sha256"] = digest.hexdigest()
+    return actual_size
 
 
 def load_manifest(assets, entry_id=None, expected_user_id=None):
@@ -104,6 +117,35 @@ def write_upload_manifest(output, entries):
     output = Path(output).expanduser()
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps({str(entry_id): entry for entry_id, entry in entries.items()}, indent=2) + "\n")
+
+
+def sync_upload_metadata(metadata_path, entry_id, entries):
+    entry = entries[str(entry_id)]
+    title_id = infer_title_id("", entry["files"])
+    total_size = sum(int(item["size"]) for item in entry["files"])
+    bu_size = max(
+        int(item["size"])
+        for candidate in entries.values()
+        for item in candidate["files"]
+        if infer_title_id("", [item]) == title_id
+    )
+    db = sqlite3.connect(metadata_path)
+    try:
+        cursor = db.execute(
+            "UPDATE dir_entry_info_tbl SET actual_size = ?, transfer_size = ?, required_size = ? WHERE id = ?",
+            (total_size, total_size, total_size, entry_id),
+        )
+        if cursor.rowcount != 1:
+            raise ValueError(f"metadata entry {entry_id} is missing for upload")
+        db.execute(
+            "UPDATE users_savedata_tbl SET "
+            "size = (SELECT COALESCE(SUM(actual_size), 0) FROM dir_entry_info_tbl "
+            "WHERE target_type = 3 AND path LIKE ?), bu_size = ? WHERE title_id = ?",
+            (f"%/savedata_prospero/{title_id}/", bu_size, title_id),
+        )
+        db.commit()
+    finally:
+        db.close()
 
 
 def infer_title_id(title_id, files):
@@ -169,6 +211,34 @@ def target_path(source_path, user_id):
     return result + "/" if source_path.endswith("/") else result
 
 
+def resolve_upload_layout(row, upload_entry, user_id, candidate_rows):
+    files = upload_entry["files"]
+    title_id = infer_title_id("", files)
+    total_size = sum(int(item["size"]) for item in files)
+    if total_size <= 0:
+        raise ValueError("save files must not be empty")
+    row_title = infer_title_id("", [{"path": row[1]}])
+    if row_title != title_id:
+        matches = []
+        for candidate in candidate_rows:
+            parts = candidate[1].strip("/").split("/")
+            if len(parts) < 3 or parts[2].lower() != user_id:
+                continue
+            if infer_title_id("", [{"path": candidate[1]}]) != title_id:
+                continue
+            matches.append(candidate)
+        if len(matches) != 1:
+            raise ValueError(
+                f"entry {row[0]} metadata is for {row_title}, but its save payload is for {title_id}; "
+                "no unique matching directory entry exists"
+            )
+        row = (row[0], *matches[0][1:])
+    layout = list(row)
+    layout[1] = target_path(layout[1], user_id)
+    layout[7] = layout[8] = layout[9] = total_size
+    return title_id, layout
+
+
 def create_filtered_metadata(
     output, source_metadata, user_id, user_name, entry_ids, assets, manifest_output=None
 ):
@@ -200,6 +270,7 @@ def create_filtered_metadata(
             "SELECT * FROM user_info_tbl WHERE user_id = ?", (int(user_id, 16),)
         ).fetchone()
         savedata_rows = db.execute("SELECT * FROM users_savedata_tbl").fetchall()
+        candidate_rows = db.execute("SELECT * FROM dir_entry_info_tbl WHERE target_type = 3").fetchall()
 
         db.execute("DELETE FROM dir_entry_info_tbl")
         db.execute("DELETE FROM app_info_tbl")
@@ -225,11 +296,9 @@ def create_filtered_metadata(
 
         entries_by_title = {}
         for row in rows:
-            path = target_path(row[1], user_id)
-            title_id = infer_title_id("", [{"path": path}])
-            db.execute("INSERT INTO dir_entry_info_tbl VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                       (row[0], path, *row[2:]))
-            entries_by_title.setdefault(title_id, []).append(row)
+            title_id, layout = resolve_upload_layout(row, upload_entries[row[0]], user_id, candidate_rows)
+            db.execute("INSERT INTO dir_entry_info_tbl VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", layout)
+            entries_by_title.setdefault(title_id, []).append(layout)
 
         for title_id, title_rows in entries_by_title.items():
             original = next((row for row in savedata_rows if row[1].upper() == title_id), None)
