@@ -162,6 +162,18 @@ def validate_options(options):
     return ps5_ip, host_id.lower(), system_version.upper(), oracle_host, oracle_port, destination, duration
 
 
+def drop_privileges_from_environment():
+    if os.name != "posix" or os.geteuid() != 0:
+        return
+    uid = os.environ.get("DT_PAIRING_UID")
+    gid = os.environ.get("DT_PAIRING_GID")
+    if uid is None or gid is None:
+        return
+    os.setgroups([])
+    os.setgid(int(gid))
+    os.setuid(int(uid))
+
+
 def pair(options, discovery_port=1006, command_port=1004, bind_ip=None):
     ps5_ip, host_id, system_version, oracle_host, oracle_port, destination, duration = validate_options(options)
     bind_ip = bind_ip or local_ipv4_for(ps5_ip)
@@ -171,6 +183,7 @@ def pair(options, discovery_port=1006, command_port=1004, bind_ip=None):
         discovery.bind(("0.0.0.0", discovery_port))
         command.bind((bind_ip, command_port))
         command.listen(1)
+        drop_privileges_from_environment()
         emit("status", message="Pairing listener ready. Select GarlicTransfer Pairing on the PS5.")
         while True:
             remaining = deadline - time.monotonic()

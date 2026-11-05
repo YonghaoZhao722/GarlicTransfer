@@ -11,6 +11,7 @@ import threading
 from pathlib import Path
 
 from poc.dt_metadata import validate_payload
+from poc.dt_pair import save_prefix
 from poc.dt_ppr_client import derive_with_oracle
 from poc.dt_psk_client import derive_keys, recv_exact, recv_record, send_record
 
@@ -279,6 +280,20 @@ def user_registry_value(body):
     return value[:size].ljust(size, b"\0")
 
 
+def cache_pairing_prefix(body):
+    destination = os.environ.get("DT_PAIRING_PREFIX")
+    if not destination:
+        return
+    if len(body) != 88:
+        raise ValueError("cannot cache a pairing prefix from a malformed power request")
+    expected_host = os.environ.get("DT_EXPECTED_HOST_ID", "").lower()
+    observed_host = body[32:38].hex()
+    if observed_host != expected_host:
+        raise ValueError("power request console ID does not match the selected console")
+    save_prefix(bytes(body[:32]), destination)
+    print("[pairing] cached console approval for future metadata downloads", flush=True)
+
+
 def serve_command(sock, oracle_host, oracle_port):
     server_value = os.urandom(16)
     sock.sendall(server_value + bytes(48))
@@ -310,6 +325,7 @@ def serve_command(sock, oracle_host, oracle_port):
             response_body = console_info(hardware, product_code, body[56:73], version_a, version_b)
             result = 0
             if cmd == 0x91:
+                cache_pairing_prefix(body)
                 waiting = struct.pack("<BBHIQ", cmd, sub, version, 33, 0)
                 send_command_record(sock, send_key, send_nonce, send_sequence, waiting)
                 send_sequence += 1

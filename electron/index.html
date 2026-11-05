@@ -25,14 +25,9 @@
         <label>Discovered consoles<select id="consoleSelect"><option value="">Discover and select a console</option></select></label>
         <button id="discoverBtn" type="button">Discover consoles</button>
         <div class="pairing-option">
-          <button id="pairBtn" type="button" disabled>Pair this PS5 once (experimental)</button>
-          <span id="pairingState" class="hint">Discover a PS5 on firmware 14.22 to check pairing.</span>
+          <button id="pairBtn" type="button" disabled>Pair this PS5 once</button>
+          <span id="pairingState" class="hint">Discover a PS5 to check pairing.</span>
         </div>
-        <p id="pairingInstructions" class="hint">Experimental Windows pairing, not yet verified on a live PS5: start here, then on the PS5 open Settings → System → System Software → Data Transfer and select “GarlicTransfer Pairing.” “Can’t transfer data” is expected. If the app confirms pairing, return to the home screen and browse saves. The captured identifier stays on this PC.</p>
-        <label>PSN account ID (optional, decimal)
-          <span class="file-row"><input id="accountId" inputmode="numeric" pattern="[0-9]*" autocomplete="off" spellcheck="false" placeholder="Used only for the first browse if metadata.db is absent"><button id="findAccountIdBtn" type="button">Find in PS4 USB backup</button></span>
-        </label>
-        <p class="hint">The verified first browse used a decimal PSN account ID. Enter it above, or read it from a PS4 USB backup; the USB picker has not been live-tested end to end. After a prior browse, local metadata supplies the ID automatically. It is not a PSN password.</p>
       </section>
 
       <section class="actions">
@@ -44,14 +39,13 @@
 
       <section id="uploadDestination" class="panel upload-inputs" hidden>
         <h2>Upload destination</h2>
-        <p class="upload-instructions">Select user/save(s), then on the console go to Settings → System → System Software → Data Transfer, press Continue, select “GarlicTransfer” from the found consoles, then select “Start transfer”. Delete ALL selected original saves before upload.</p>
         <label id="userSelectLabel" hidden>Upload to user
           <select id="userSelect"></select>
         </label>
         <label id="uploadSaveSelectLabel" hidden>Upload saves (Ctrl/Cmd-click to select multiple)
           <select id="uploadSaveSelect" multiple size="6"></select>
         </label>
-        <button id="confirmUploadBtn" class="primary" hidden>Delete selected original saves and start upload</button>
+        <button id="confirmUploadBtn" class="primary" hidden>Upload save</button>
       </section>
 
       <section class="status-panel">
@@ -119,6 +113,25 @@
     <h2>Console action required</h2>
     <p>Press power button until it beeps and release</p>
     <span>Waiting for metadata download…</span>
+  </dialog>
+  <dialog id="pairingModal" class="power-modal pairing-modal">
+    <h2>Pair this PS5</h2>
+    <ol>
+      <li>On the PS5, open <strong>Settings → System → System Software → Data Transfer</strong>.</li>
+      <li>Select <strong>GarlicTransfer Pairing</strong> when it appears.</li>
+      <li>“Can’t transfer data” is expected. Wait here while pairing completes.</li>
+    </ol>
+    <p>The modal will close automatically when the PS5 is paired.</p>
+    <button id="pairingCancelBtn" class="secondary" type="button">Cancel pairing</button>
+  </dialog>
+  <dialog id="uploadModal" class="power-modal pairing-modal">
+    <h2>Upload save</h2>
+    <ol>
+      <li>Delete the selected save data on the PS5.</li>
+      <li>Open <strong>Settings → System → System Software → Data Transfer</strong> and select <strong>GarlicTransfer</strong>.</li>
+      <li>Follow the on-screen prompts to import the data.</li>
+    </ol>
+    <button id="uploadModalCloseBtn" class="secondary" type="button">Close instructions</button>
   </dialog>
   <script src="renderer.js"></script>
 </body>

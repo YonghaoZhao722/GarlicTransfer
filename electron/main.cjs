@@ -7,7 +7,6 @@ const path = require('node:path');
 const { startRemoteOracle, stopRemoteOracle } = require('./remote_oracle.cjs');
 const { loadSettings, saveSettings } = require('./config.cjs');
 const { titleName } = require('./titles.cjs');
-const { accountIdFromBackupDirectory } = require('./account_id.cjs');
 const { pairingPrefixPath, existingPairingPrefix } = require('./pairing_store.cjs');
 const { resourceRoot, oracleElf, workDir, pythonBin } = require('./paths.cjs');
 let window;
@@ -103,9 +102,15 @@ function startDownload(options) {
   // The renderer never chooses a local credential file. Resolve it only from
   // the console identity reported by discovery, inside the main process.
   delete options.approvalPrefixPath;
+  let paired = null;
   if (options.hostId && options.systemVersion) {
-    const paired = existingPairingPrefix(app.getPath('userData'), options);
+    paired = existingPairingPrefix(app.getPath('userData'), options);
     if (paired) options.approvalPrefixPath = paired;
+  }
+  const metadataPath = options.metadata || path.join(options.output || 'dt_downloads', 'metadata.db');
+  if (!String(options.accountId || '').trim() && !paired && !fs.existsSync(metadataPath)) {
+    startPairing(options);
+    return;
   }
   active = { kind: 'download', completed: false, awaitingSelection: false, process: null };
   (async () => {
@@ -148,24 +153,34 @@ function startDownload(options) {
 
 function startPairing(options) {
   if (active) throw new Error('another transfer is already running');
-  if (process.platform !== 'win32') {
-    throw new Error('One-time pairing is currently Windows-only; use a PS4 USB backup or the decimal account ID');
-  }
   if (net.isIP(options.clientHost) !== 4) throw new Error('Discover and select a PS5 IPv4 address first');
-  if (options.systemVersion !== '14220000') throw new Error('One-time pairing is currently implemented only for PS5 14.22');
   const prefixPath = pairingPrefixPath(app.getPath('userData'), options);
   fs.mkdirSync(path.dirname(prefixPath), { recursive: true, mode: 0o700 });
   active = { kind: 'pair', completed: false, process: null };
   const session = active;
+  send('pairingStarted');
   (async () => {
     await ensureOracle(options);
     if (active !== session) {
       if (!active) stopOracle();
       return;
     }
-    const child = spawn(pythonBin(), ['-u', '-m', 'poc.dt_pair', '-'], {
+    const python = pythonBin();
+    let command = python;
+    let args = ['-u', '-m', 'poc.dt_pair', '-'];
+    let environment = { ...process.env, PYTHONPATH: resourceRoot };
+    if (process.platform === 'linux' && process.getuid() !== 0) {
+      command = 'pkexec';
+      args = [
+        '/usr/bin/env', `PYTHONPATH=${resourceRoot}`,
+        `DT_PAIRING_UID=${process.getuid()}`, `DT_PAIRING_GID=${process.getgid()}`,
+        python, '-u', '-m', 'poc.dt_pair', '-',
+      ];
+      environment = process.env;
+    }
+    const child = spawn(command, args, {
       cwd: workDir,
-      env: { ...process.env, PYTHONPATH: resourceRoot },
+      env: environment,
     });
     session.process = child;
     child.stdin.end(`${JSON.stringify({
@@ -330,6 +345,8 @@ function startUpload(options) {
       DT_ASSETS: path.resolve(options.assets),
       DT_MANIFEST: path.resolve(options.uploadManifest),
       DT_LOG: path.join(path.resolve(options.output), 'dt-source.log'),
+      DT_PAIRING_PREFIX: pairingPrefixPath(app.getPath('userData'), options),
+      DT_EXPECTED_HOST_ID: String(options.hostId),
       DT_EXIT_ON_EOF: '1',
       DT_PORT: String(options.sourcePort || 1004),
       DT_DATA_PORT: String(options.dataPort || 1005),
@@ -458,11 +475,6 @@ ipcMain.handle('dialog:metadata', async () => {
 ipcMain.handle('dialog:assets', async () => {
   const result = await dialog.showOpenDialog(window, { properties: ['openDirectory'] });
   return result.canceled ? null : result.filePaths[0];
-});
-
-ipcMain.handle('dialog:account-id', async () => {
-  const result = await dialog.showOpenDialog(window, { properties: ['openDirectory'] });
-  return result.canceled ? null : accountIdFromBackupDirectory(result.filePaths[0]);
 });
 
 ipcMain.handle('transfer:download', (_event, options) => startDownload(options));

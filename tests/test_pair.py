@@ -51,6 +51,20 @@ class PairTests(unittest.TestCase):
                 save_prefix(b"short", destination)
             self.assertEqual(destination.read_bytes(), bytes(reversed(range(32))))
 
+    def test_privileged_pairing_drops_back_to_the_app_user_after_binding(self):
+        from poc.dt_pair import drop_privileges_from_environment
+
+        environment = {"DT_PAIRING_UID": "1000", "DT_PAIRING_GID": "1001"}
+        with patch.dict(os.environ, environment), \
+             patch("poc.dt_pair.os.geteuid", return_value=0), \
+             patch("poc.dt_pair.os.setgroups") as setgroups, \
+             patch("poc.dt_pair.os.setgid") as setgid, \
+             patch("poc.dt_pair.os.setuid") as setuid:
+            drop_privileges_from_environment()
+        setgroups.assert_called_once_with([])
+        setgid.assert_called_once_with(1001)
+        setuid.assert_called_once_with(1000)
+
     def test_one_encrypted_request_pairs_without_answer_or_data_port(self):
         prefix = bytes(range(32))
         body = prefix + bytes(range(32, 88))

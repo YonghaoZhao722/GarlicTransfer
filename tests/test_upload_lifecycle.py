@@ -31,6 +31,35 @@ class UploadLifecycleTests(unittest.TestCase):
         self.assertLess(stop.index("active = null"), stop.index("session.process.kill()"))
         self.assertNotIn("active.process.kill()", stop)
 
+    def test_upload_power_body_caches_pairing_prefix(self):
+        import os
+        import tempfile
+        from poc.dt_ppr_power import CAPTURED_BODY
+
+        with tempfile.TemporaryDirectory() as folder:
+            destination = Path(folder) / "pairings" / "prefix.bin"
+            environment = {
+                "DT_PAIRING_PREFIX": str(destination),
+                "DT_EXPECTED_HOST_ID": "5C843CC6D727",
+            }
+            with patch.dict(os.environ, environment):
+                dt_source.cache_pairing_prefix(CAPTURED_BODY)
+            self.assertEqual(destination.read_bytes(), CAPTURED_BODY[:32])
+
+            with patch.dict(os.environ, {**environment, "DT_EXPECTED_HOST_ID": "000000000001"}):
+                with self.assertRaisesRegex(ValueError, "does not match"):
+                    dt_source.cache_pairing_prefix(CAPTURED_BODY)
+            self.assertEqual(destination.read_bytes(), CAPTURED_BODY[:32])
+
+    def test_download_falls_back_to_pairing_and_upload_supplies_prefix_path(self):
+        source = Path(__file__).resolve().parent.parent.joinpath("electron", "main.cjs").read_text()
+        download = source[source.index("function startDownload"):source.index("function startPairing")]
+        self.assertIn("!paired && !fs.existsSync(metadataPath)", download)
+        self.assertIn("startPairing(options)", download)
+        upload = source[source.index("function startUpload"):source.index("function finish")]
+        self.assertIn("DT_PAIRING_PREFIX: pairingPrefixPath(app.getPath('userData'), options)", upload)
+        self.assertIn("DT_EXPECTED_HOST_ID: String(options.hostId)", upload)
+
     def test_auth_b3_and_disconnect_share_one_command_channel(self):
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

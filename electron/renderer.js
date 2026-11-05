@@ -5,9 +5,9 @@ for (const id of [
   'useRemoteOracle', 'serverUrl', 'workerKey', 'settingsSave', 'settingsStatus',
   'userSelect', 'userSelectLabel', 'uploadSaveSelect', 'uploadSaveSelectLabel', 'confirmUploadBtn', 'sourcePort', 'dataPort', 'discoveryPort',
   'downloadBtn', 'downloadSelectedBtn', 'uploadBtn', 'finishBtn', 'cancelBtn', 'powerBtn', 'status', 'entries', 'log',
-  'consoleSelect', 'discoverBtn', 'accountId', 'findAccountIdBtn', 'pairBtn', 'pairingState', 'preferIpv6', 'selectAllEntries', 'entryCount', 'powerModal',
+  'consoleSelect', 'discoverBtn', 'pairBtn', 'pairingState', 'preferIpv6', 'selectAllEntries', 'entryCount', 'powerModal',
+  'pairingModal', 'pairingCancelBtn', 'uploadModal', 'uploadModalCloseBtn',
 ]) controls[id] = byId(id);
-byId('pairingInstructions').hidden = !window.saveTransfer.pairingAvailable;
 let activeTransfer = null;
 let availableUsers = [];
 let availableEntries = [];
@@ -32,7 +32,6 @@ function options() {
     clientHost,
     hostId: controls.consoleSelect.selectedOptions[0]?.dataset.hostId || '',
     systemVersion: controls.consoleSelect.selectedOptions[0]?.dataset.firmware || '',
-    accountId: controls.accountId.value.trim(),
     interface: controls.interface.value.trim(),
     hardware: Number(controls.hardware.value || 0),
     output: controls.output.value.trim() || 'dt_downloads',
@@ -67,28 +66,24 @@ function applyConsoleProfile() {
   controls.output.value = profilePath(root, profile);
   controls.assets.value = controls.output.value;
   controls.metadata.value = '';
-  controls.accountId.value = '';
   refreshPairingStatus();
 }
 
 async function refreshPairingStatus() {
   const selected = controls.consoleSelect.selectedOptions[0];
   const identity = { hostId: selected?.dataset.hostId || '', systemVersion: selected?.dataset.firmware || '' };
-  const supported = window.saveTransfer.pairingAvailable && Boolean(selected?.value) &&
-    identity.systemVersion === '14220000';
+  const supported = window.saveTransfer.pairingAvailable && Boolean(selected?.value);
+  controls.pairingState.classList.remove('paired');
   controls.pairBtn.disabled = !supported || Boolean(activeTransfer) || browseSessionActive;
   controls.pairingState.textContent = supported
     ? 'Checking whether this PS5 has been paired…'
-    : window.saveTransfer.pairingAvailable
-      ? 'Experimental one-time pairing is available for a discovered PS5 on firmware 14.22.'
-      : 'On Linux and macOS, use a PS4 USB backup or enter the decimal account ID.';
+    : 'Discover a PS5 to check pairing.';
   if (!supported) return;
   try {
     const paired = await window.saveTransfer.pairingStatus(identity);
     if (controls.consoleSelect.selectedOptions[0] !== selected) return;
-    controls.pairingState.textContent = paired
-      ? 'Paired on this PC. Browse from the PS5 home screen.'
-      : 'Not paired yet. Experimental pairing may let you browse without entering an account ID.';
+    controls.pairingState.textContent = paired ? 'Paired!' : 'Not paired yet. Pair this PS5 to continue.';
+    controls.pairingState.classList.toggle('paired', paired);
   } catch (error) {
     if (controls.consoleSelect.selectedOptions[0] === selected) {
       controls.pairingState.textContent = `Could not check pairing: ${error.message}`;
@@ -113,14 +108,14 @@ function updateSelection() {
 function busy(value) {
   controls.downloadBtn.disabled = value;
   controls.uploadBtn.disabled = value;
-  controls.accountId.disabled = value || browseSessionActive;
-  controls.findAccountIdBtn.disabled = value || browseSessionActive;
-  controls.pairBtn.disabled = !window.saveTransfer.pairingAvailable || value || browseSessionActive ||
-    controls.consoleSelect.selectedOptions[0]?.dataset.firmware !== '14220000';
+  controls.pairBtn.disabled = !window.saveTransfer.pairingAvailable || value || browseSessionActive;
   controls.cancelBtn.disabled = !value;
   controls.consoleSelect.disabled = value || browseSessionActive;
   controls.discoverBtn.disabled = value || browseSessionActive;
-  if (!value) hidePowerModal();
+  if (!value) {
+    hidePowerModal();
+    hideUploadModal();
+  }
   updateSelection();
 }
 
@@ -139,6 +134,22 @@ function showPowerModal() {
 
 function hidePowerModal() {
   if (controls.powerModal.open) controls.powerModal.close();
+}
+
+function showPairingModal() {
+  if (!controls.pairingModal.open) controls.pairingModal.showModal();
+}
+
+function hidePairingModal() {
+  if (controls.pairingModal.open) controls.pairingModal.close();
+}
+
+function showUploadModal() {
+  if (!controls.uploadModal.open) controls.uploadModal.showModal();
+}
+
+function hideUploadModal() {
+  if (controls.uploadModal.open) controls.uploadModal.close();
 }
 
 function renderEntries() {
@@ -273,6 +284,7 @@ async function startUploadSource() {
     entryIds,
   };
   activeTransfer = 'upload';
+  showUploadModal();
   busy(true);
   controls.confirmUploadBtn.hidden = true;
   controls.userSelectLabel.hidden = true;
@@ -314,7 +326,7 @@ function showUploadConfirmation() {
   controls.userSelectLabel.hidden = false;
   controls.uploadSaveSelectLabel.hidden = false;
   controls.confirmUploadBtn.hidden = false;
-  status('Select one user and one or more saves. Delete ALL selected original saves on the client before upload.');
+  status('Select one user and one or more saves.');
 }
 
 async function startUpload() {
@@ -431,18 +443,6 @@ async function loadSettings() {
 controls.consoleSelect.addEventListener('change', applyConsoleProfile);
 loadSettings();
 
-controls.findAccountIdBtn.addEventListener('click', async () => {
-  try {
-    const accountId = await window.saveTransfer.chooseAccountId();
-    if (accountId !== null) {
-      controls.accountId.value = accountId;
-      status('PSN account ID found in the PS4 USB backup folder. You can browse this console from its home screen.');
-    }
-  } catch (error) {
-    status(`Could not find an account ID: ${error.message}`);
-  }
-});
-
 controls.pairBtn.addEventListener('click', async () => {
   const current = options();
   if (!current.clientHost) {
@@ -450,16 +450,28 @@ controls.pairBtn.addEventListener('click', async () => {
     return;
   }
   activeTransfer = 'pair';
+  showPairingModal();
   busy(true);
-  status('Starting the experimental pairing listener. When ready, open PS5 Data Transfer and select “GarlicTransfer Pairing”.');
+  status('Starting the pairing listener. Follow the instructions in the pairing window.');
   try {
     await window.saveTransfer.pair(current);
   } catch (error) {
     activeTransfer = null;
+    hidePairingModal();
     busy(false);
     status(`Could not start pairing: ${error.message}`);
   }
 });
+
+controls.pairingCancelBtn.addEventListener('click', async () => {
+  await window.saveTransfer.cancel();
+  activeTransfer = null;
+  hidePairingModal();
+  busy(false);
+  status('Pairing cancelled.');
+});
+
+controls.uploadModalCloseBtn.addEventListener('click', hideUploadModal);
 
 controls.downloadBtn.addEventListener('click', () => browseSaves(false));
 controls.downloadSelectedBtn.addEventListener('click', () => startDownload([...selectedEntryIds]));
@@ -489,6 +501,7 @@ controls.finishBtn.addEventListener('click', async () => {
 controls.cancelBtn.addEventListener('click', async () => {
   await window.saveTransfer.cancel();
   activeTransfer = null;
+  hidePairingModal();
   pendingUploadOptions = null;
   dataTransferArmedHost = null;
   browseSessionActive = false;
@@ -520,11 +533,17 @@ for (const name of ['output', 'metadata', 'assets']) {
 
 window.saveTransfer.onEvent((event) => {
   if (event.type === 'log') appendLog(event.message);
+  if (event.type === 'pairingStarted') {
+    activeTransfer = 'pair';
+    showPairingModal();
+    busy(true);
+  }
   if (event.type === 'paired') {
-    controls.accountId.value = '';
+    hidePairingModal();
     activeTransfer = null;
     busy(false);
-    controls.pairingState.textContent = 'Paired on this PC. Browse from the PS5 home screen.';
+    controls.pairingState.textContent = 'Paired!';
+    controls.pairingState.classList.add('paired');
     status(event.message);
   }
   if (event.type === 'powerRequired') showPowerModal();
@@ -600,6 +619,7 @@ window.saveTransfer.onEvent((event) => {
   }
   if (event.type === 'error') {
     activeTransfer = null;
+    hidePairingModal();
     browseSessionActive = false;
     dataTransferArmedHost = null;
     status(`Stopped: ${event.message}\nCheck the log and the current step, then retry.`);

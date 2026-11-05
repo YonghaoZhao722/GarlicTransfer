@@ -48,6 +48,10 @@ button:disabled { opacity: .45; cursor: default; }
 .power-modal h2 { color: #e6edf5; font-size: 17px; }
 .power-modal p { font-size: 16px; line-height: 1.5; margin: 18px 0; }
 .power-modal span { color: #93a4b9; font-size: 12px; }
+.pairing-modal { text-align: left; }
+.pairing-modal ol { line-height: 1.6; padding-left: 22px; }
+.pairing-modal button { display: block; margin: 18px auto 0; }
+#pairingState.paired { color: #55d98d; font-weight: 700; }
 .browser-actions { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .browser-actions .checkbox { flex-direction: row; align-items: center; }
 #entryCount { color: #93a4b9; font-size: 12px; margin-right: auto; }
