@@ -88,12 +88,13 @@ async function ensureOracle(options) {
 }
 
 function stopActive() {
-  if (active && active.powerTimer) clearTimeout(active.powerTimer);
-  if (active && active.process && active.process.exitCode === null) {
-    if (active.kind === 'upload' && active.process.stdin.writable) active.process.stdin.end();
-    active.process.kill();
-  }
+  const session = active;
   active = null;
+  if (session && session.powerTimer) clearTimeout(session.powerTimer);
+  if (session && session.process && session.process.exitCode === null) {
+    if (session.kind === 'upload' && session.process.stdin.writable) session.process.stdin.end();
+    session.process.kill();
+  }
   stopOracle();
 }
 

@@ -25,6 +25,12 @@ class UploadLifecycleTests(unittest.TestCase):
         source = Path(__file__).resolve().parent.parent.joinpath("electron", "main.cjs").read_text()
         self.assertIn("active.transferFinished && !active.completed && code === 0", source)
 
+    def test_stop_clears_active_before_killing_process(self):
+        source = Path(__file__).resolve().parent.parent.joinpath("electron", "main.cjs").read_text()
+        stop = source[source.index("function stopActive()"):source.index("function startDownload")]
+        self.assertLess(stop.index("active = null"), stop.index("session.process.kill()"))
+        self.assertNotIn("active.process.kill()", stop)
+
     def test_auth_b3_and_disconnect_share_one_command_channel(self):
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
