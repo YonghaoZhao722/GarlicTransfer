@@ -4,6 +4,7 @@ import json
 import re
 import shutil
 import sqlite3
+import struct
 import time
 import uuid
 from pathlib import Path
@@ -21,7 +22,39 @@ def validate_user(user_id, user_name):
     return user_id.lower()
 
 
-def load_manifest(assets, entry_id=None):
+def validate_save_owner(files, user_id):
+    for item in files:
+        parts = item.get("path", "").strip("/").split("/")
+        if len(parts) < 3 or parts[:2] != ["user", "home"]:
+            raise ValueError("save manifest has an invalid owner path")
+        if parts[2].lower() != user_id:
+            raise ValueError(
+                f"cross-user upload is blocked to prevent save corruption: save belongs to {parts[2]}, not {user_id}"
+            )
+
+
+def validate_payload(path, entry_id, item):
+    try:
+        header = bytes.fromhex(item["header"])
+    except (KeyError, ValueError) as exc:
+        raise ValueError(f"save file {item.get('file', '')} has an invalid GFP5 header") from exc
+    if len(header) != 1304 or struct.unpack_from("<I", header)[0] != 0x35504647:
+        raise ValueError(f"save file {item['file']} has an invalid GFP5 header")
+    if struct.unpack_from("<I", header, 4)[0] != entry_id:
+        raise ValueError(f"save file {item['file']} has a mismatched GFP5 entry ID")
+    if header[276:1300].split(b"\0", 1)[0].decode(errors="strict") != item.get("path"):
+        raise ValueError(f"save file {item['file']} has mismatched manifest and GFP5 paths")
+    actual_size = path.stat().st_size
+    manifest_size = int(item["size"])
+    header_size = struct.unpack_from("<Q", header, 240)[0]
+    if actual_size != manifest_size or actual_size != header_size:
+        raise ValueError(
+            f"save file {item['file']} size mismatch: disk={actual_size}, "
+            f"manifest={manifest_size}, GFP5={header_size}; refusing to upload"
+        )
+
+
+def load_manifest(assets, entry_id=None, expected_user_id=None):
     assets = Path(assets).expanduser()
     manifest_path = assets / "manifest.json"
     if not manifest_path.is_file() and entry_id is not None:
@@ -44,6 +77,8 @@ def load_manifest(assets, entry_id=None):
     final_header = entry.get("final_header")
     if not files:
         raise ValueError(f"save manifest for entry {entry_id} contains no files")
+    if expected_user_id is not None:
+        validate_save_owner(files, expected_user_id)
     if not final_header:
         raise ValueError(f"entry {entry_id} lacks a GFP5 final header; redownload it with this version")
     for item in files:
@@ -51,12 +86,17 @@ def load_manifest(assets, entry_id=None):
         if not name or name != item.get("file"):
             raise ValueError(f"entry {entry_id} has an invalid save filename")
         candidates = (assets / str(entry_id) / name, assets / name)
-        if not any(path.is_file() for path in candidates):
+        path = next((candidate for candidate in candidates if candidate.is_file()), None)
+        if path is None:
             raise ValueError(f"save file for entry {entry_id} is missing: {name}")
         if not item.get("header"):
             raise ValueError(f"save file {name} lacks its GFP5 header; redownload the save")
-        bytes.fromhex(item["header"])
-    bytes.fromhex(final_header)
+        validate_payload(path, entry_id, item)
+    final_bytes = bytes.fromhex(final_header)
+    if len(final_bytes) != 1304 or struct.unpack_from("<I", final_bytes)[0] != 0x35504647:
+        raise ValueError(f"entry {entry_id} has an invalid GFP5 final header")
+    if struct.unpack_from("<I", final_bytes, 4)[0] != entry_id or not final_bytes[274]:
+        raise ValueError(f"entry {entry_id} has a mismatched GFP5 final header")
     return entry_id, {"files": files, "final_header": final_header}
 
 
@@ -81,7 +121,7 @@ def infer_title_id(title_id, files):
 
 def create_metadata(output, user_id, title_id, entry_id, assets, user_name="user", manifest_output=None):
     user_id = validate_user(user_id, user_name)
-    entry_id, upload_entry = load_manifest(assets, entry_id)
+    entry_id, upload_entry = load_manifest(assets, entry_id, expected_user_id=user_id)
     files = upload_entry["files"]
     title_id = infer_title_id(title_id, files)
     if not re.fullmatch(r"[A-Z0-9]{9}", title_id):
@@ -137,7 +177,7 @@ def create_filtered_metadata(
         entry_ids = [None]
     upload_entries = {}
     for entry_id in entry_ids:
-        actual_id, entry = load_manifest(assets, entry_id)
+        actual_id, entry = load_manifest(assets, entry_id, expected_user_id=user_id)
         upload_entries[actual_id] = entry
     entry_ids = sorted(upload_entries)
 

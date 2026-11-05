@@ -385,6 +385,10 @@ function startUpload(options) {
           }, 1000);
         }
         if (line.toLowerCase().includes('cmd=0xb3')) {
+          active.transferFinished = true;
+          send('status', { step: 3, message: 'Save data sent. Waiting for the console to disconnect.' });
+        }
+        if (active.transferFinished && line.toLowerCase().includes('cmd=0x94')) {
           active.completed = true;
           send('done', { message: 'Save upload completed. The client may reboot to finish.' });
           stopActive();
@@ -395,6 +399,10 @@ function startUpload(options) {
     child.stderr.on('data', (data) => send('log', { message: String(data).trim() }));
     child.on('error', (error) => finish(error));
     child.on('close', (code) => {
+      if (active && active.kind === 'upload' && active.transferFinished && !active.completed && code === 0) {
+        active.completed = true;
+        send('done', { message: 'Save upload completed. The console closed the transfer session.' });
+      }
       if (active && active.kind === 'upload' && !active.completed && code !== 0) {
         finish(new Error(`source emulator exited with status ${code}`));
       } else {

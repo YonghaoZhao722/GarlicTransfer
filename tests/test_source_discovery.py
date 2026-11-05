@@ -172,6 +172,7 @@ class OracleConfigurationTests(unittest.TestCase):
         dt_source.DATA_ADDRESS = dt_source.packed_address("192.168.5.44")
         body = dt_source.console_info(3, 0x290, b"np", 0x13600007, 0x13600007)
         self.assertEqual(len(body), 72)
+        self.assertEqual(body[:6], bytes.fromhex(dt_source.HOST_ID.decode()))
         self.assertEqual(body[48:64], bytes.fromhex("00000000000000000000ffffc0a8052c"))
         self.assertEqual(struct.unpack_from("<I", body, 32)[0], 0x13600007)
 

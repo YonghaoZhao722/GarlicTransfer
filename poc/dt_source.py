@@ -10,6 +10,7 @@ import sys
 import threading
 from pathlib import Path
 
+from poc.dt_metadata import validate_payload
 from poc.dt_ppr_client import derive_with_oracle
 from poc.dt_psk_client import derive_keys, recv_exact, recv_record, send_record
 
@@ -196,7 +197,7 @@ def discovery_server(port, ipv6=False):
 
 def console_info(hardware, product_code, np_env, version_a, version_b):
     body = bytearray(72)
-    body[:6] = bytes.fromhex("5c96661f7c1a")
+    body[:6] = bytes.fromhex(HOST_ID.decode())
     body[6] = 1
     struct.pack_into("<I", body, 8, hardware)
     struct.pack_into("<I", body, 12, product_code)
@@ -234,14 +235,23 @@ def send_save_chunks(sock, key, nonce, sequence, file_type, file_id):
         assets.append((entry, path))
     if assets and all(path.is_file() for _, path in assets):
         for entry, path in assets:
+            validate_payload(path, file_id, entry)
             print(f"[data] GFP5 id={file_id} type={file_type} path={entry['path']} size={entry['size']}", flush=True)
             send_record(sock, key, nonce, sequence, bytes.fromhex(entry["header"]))
             sequence += 1
             if file_type == 2:
-                with path.open("rb") as stream:
-                    while chunk := stream.read(0x200000):
-                        send_record(sock, key, nonce, sequence, chunk)
-                        sequence += 1
+                sent = 0
+                try:
+                    with path.open("rb") as stream:
+                        while chunk := stream.read(0x200000):
+                            send_record(sock, key, nonce, sequence, chunk)
+                            sequence += 1
+                            sent += len(chunk)
+                            print(f"[data] GFP5 chunk id={file_id} offset={sent} bytes={len(chunk)}", flush=True)
+                    print(f"[data] GFP5 file complete id={file_id} bytes={sent}", flush=True)
+                except Exception as exc:
+                    print(f"[data] GFP5 stream error id={file_id} offset={sent} error={exc}", flush=True)
+                    raise
         final_header = bytes.fromhex(save["final_header"])
     else:
         print(f"[data] GFP5 id={file_id} type={file_type} noent", flush=True)
@@ -251,6 +261,7 @@ def send_save_chunks(sock, key, nonce, sequence, file_type, file_id):
         final_header[274] = 1
         final_header = bytes(final_header)
     send_record(sock, key, nonce, sequence, final_header)
+    print(f"[data] GFP5 final header id={file_id} bytes={len(final_header)}", flush=True)
     return sequence + 1
 
 
@@ -335,7 +346,7 @@ def serve_command(sock, oracle_host, oracle_port):
         print(f"[cmd] response complete cmd={cmd:#x}", flush=True)
         if cmd == 0x92:
             break
-        if cmd not in (0x91, 0xA1):
+        if cmd not in (0x91, 0x93, 0xA1, 0xB3):
             break
     COMMAND_STATE["active"] = False
 
@@ -478,6 +489,7 @@ def main():
     family = socket.AF_INET6 if args.ipv6 else socket.AF_INET
     bind_address = "::" if args.ipv6 else "0.0.0.0"
     sys.stdout = Tee(os.environ.get("DT_LOG", "dt.txt"))
+    sys.stderr = sys.stdout
     threading.Thread(target=interactive_console, daemon=True).start()
 
     data_listener = socket.socket(family, socket.SOCK_STREAM)
