@@ -348,6 +348,7 @@ function startUpload(options) {
       DT_PAIRING_PREFIX: pairingPrefixPath(app.getPath('userData'), options),
       DT_EXPECTED_HOST_ID: String(options.hostId),
       DT_EXIT_ON_EOF: '1',
+      DT_AUTO_POWER: '1',
       DT_PORT: String(options.sourcePort || 1004),
       DT_DATA_PORT: String(options.dataPort || 1005),
       DT_DISCOVERY_PORT: String(options.discoveryPort || 1006),
@@ -394,13 +395,6 @@ function startUpload(options) {
         send('log', { message: line });
         if (line.includes("type 'power'")) {
           send('status', { step: 3, message: 'Sending the source power signal automatically in 1 second.' });
-          const session = active;
-          session.powerTimer = setTimeout(() => {
-            if (active === session && session.process && session.process.exitCode === null) {
-              session.process.stdin.write('power\n');
-              send('log', { message: '[power] sent automatically after 1 second' });
-            }
-          }, 1000);
         }
         if (line.toLowerCase().includes('cmd=0xb3')) {
           active.transferFinished = true;

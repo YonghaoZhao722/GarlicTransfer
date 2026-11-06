@@ -60,6 +60,61 @@ class UploadLifecycleTests(unittest.TestCase):
         self.assertIn("DT_PAIRING_PREFIX: pairingPrefixPath(app.getPath('userData'), options)", upload)
         self.assertIn("DT_EXPECTED_HOST_ID: String(options.hostId)", upload)
 
+    def test_auto_power_does_not_require_stdin(self):
+        import os
+
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        port = listener.getsockname()[1]
+        errors = []
+
+        def serve():
+            try:
+                client, _ = listener.accept()
+                with client:
+                    dt_source.serve_command(client, "unused", 0)
+            except EOFError:
+                pass
+            except Exception as exc:
+                errors.append(exc)
+
+        def derive_source(sock, oracle_host, oracle_port, client_value, server_value):
+            return derive_keys(client_value, server_value)
+
+        def derive_oracle(host, port, client_value, server_value):
+            return derive_keys(client_value, server_value)
+
+        thread = threading.Thread(target=serve, daemon=True)
+        thread.start()
+        channel = None
+        try:
+            with patch.dict(os.environ, {"DT_AUTO_POWER": "1"}), \
+                 patch.object(dt_source, "derive_session", side_effect=derive_source), \
+                 patch("poc.dt_download.derive_with_oracle", side_effect=derive_oracle):
+                channel = DtChannel("127.0.0.1", port, "unused", 0)
+                channel.sock.settimeout(5)
+                body = build_power_request_body(
+                    0x13600007,
+                    2,
+                    "5C843CC6D727",
+                    power_request_prefix("72623859790382856"),
+                )
+                sub = channel.request(0x91, body)
+                self.assertEqual(channel.response(0x91, sub)[0], 33)
+                result, response = channel.response(0x91, sub)
+                self.assertEqual(result, 0)
+                self.assertEqual(len(response), 72)
+        finally:
+            if channel is not None:
+                channel.close()
+            listener.close()
+            thread.join(timeout=2)
+
+        self.assertEqual(errors, [])
+        self.assertFalse(thread.is_alive())
+
     def test_auth_b3_and_disconnect_share_one_command_channel(self):
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

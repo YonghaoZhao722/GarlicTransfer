@@ -334,6 +334,11 @@ def serve_command(sock, oracle_host, oracle_port):
                 send_sequence += 1
                 POWER_EVENT.clear()
                 print("[power] type 'power' to simulate the source console power button", flush=True)
+                if os.environ.get("DT_AUTO_POWER") == "1":
+                    def signal_power():
+                        POWER_EVENT.set()
+                        print("[dt] power-button simulation signalled", flush=True)
+                    threading.Timer(1.0, signal_power).start()
                 if not POWER_EVENT.wait(310):
                     raise TimeoutError("power-button simulation timed out")
         elif cmd == 0x92:
