@@ -59,6 +59,7 @@ function loadSettings() {
     useRemoteOracle: stored.useRemoteOracle
       ? stored.useRemoteOracle === 'true'
       : defaults.useRemoteOracle,
+    workerKey: String(stored.workerKey || '').trim() || defaults.workerKey,
     oraclePort: Number(stored.oraclePort || defaults.oraclePort),
     hardware: Number(stored.hardware || defaults.hardware),
     entryId: Number(stored.entryId || defaults.entryId),
