@@ -135,6 +135,11 @@ def save_prefix(prefix, destination):
             os.chmod(temporary, 0o600)
             output.write(prefix)
         os.replace(temporary, path)
+        if os.name == "posix" and os.geteuid() == 0:
+            uid = os.environ.get("DT_PAIRING_UID")
+            gid = os.environ.get("DT_PAIRING_GID")
+            if uid is not None and gid is not None:
+                os.chown(path, int(uid), int(gid))
     finally:
         Path(temporary).unlink(missing_ok=True)
 

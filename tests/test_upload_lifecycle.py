@@ -57,7 +57,11 @@ class UploadLifecycleTests(unittest.TestCase):
         self.assertIn("!paired && !fs.existsSync(metadataPath)", download)
         self.assertIn("startPairing(options)", download)
         upload = source[source.index("function startUpload"):source.index("function finish")]
-        self.assertIn("DT_PAIRING_PREFIX: pairingPrefixPath(app.getPath('userData'), options)", upload)
+        self.assertIn("const prefixPath = pairingPrefixPath(app.getPath('userData'), options)", upload)
+        self.assertIn("fs.mkdirSync(path.dirname(prefixPath)", upload)
+        self.assertIn("DT_PAIRING_PREFIX: prefixPath", upload)
+        self.assertIn("DT_PAIRING_UID = String(process.getuid())", upload)
+        self.assertIn("DT_PAIRING_GID = String(process.getgid())", upload)
         self.assertIn("DT_EXPECTED_HOST_ID: String(options.hostId)", upload)
 
     def test_auto_power_does_not_require_stdin(self):

@@ -2,7 +2,6 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const net = require('node:net');
-const os = require('node:os');
 const path = require('node:path');
 const { startRemoteOracle, stopRemoteOracle } = require('./remote_oracle.cjs');
 const { loadSettings, saveSettings } = require('./config.cjs');
@@ -238,17 +237,12 @@ function startPairing(options) {
 
 function getConsoles(options) {
   return new Promise((resolve, reject) => {
-    let broadcast = '255.255.255.255';
-    const interfaces = os.networkInterfaces()[options.interface];
-    const address = interfaces?.find((item) => item.family === 'IPv4' && !item.internal);
-    if (address) {
-      const parts = address.address.split('.').map(Number);
-      if (parts.length === 4) {
-        parts[3] = 255;
-        broadcast = parts.join('.');
-      }
-    }
-    const child = spawn(pythonBin(), ['-m', 'poc.dt_discovery', '--broadcast', broadcast], { cwd: workDir, env: { ...process.env, PYTHONPATH: resourceRoot } });
+    const { discoveryRoutes } = require('./discovery.cjs');
+    const routes = discoveryRoutes();
+    const port = String(Number(options.discoveryPort) || 1006);
+    const child = spawn(pythonBin(), [
+      '-m', 'poc.dt_discovery', '--routes', JSON.stringify(routes), '--port', port,
+    ], { cwd: workDir, env: { ...process.env, PYTHONPATH: resourceRoot } });
     let buffer = '';
     child.stdout.on('data', (data) => { buffer += data; });
     child.stderr.on('data', (data) => { buffer += data; });
