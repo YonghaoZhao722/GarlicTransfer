@@ -312,7 +312,9 @@ function createMetadata(options) {
       '--user-name', options.userName || 'user',
       '--manifest-output', generatedManifest,
     ];
-    if (options.metadata) args.push('--source', options.metadata);
+    if (options.uploadKind === 'other') {
+      args.push('--other', '--source', options.metadata || path.join(options.output, 'metadata.db'));
+    } else if (options.metadata) args.push('--source', options.metadata);
     else args.push('--title-id', options.titleId || '');
     const entryIds = Array.isArray(options.entryIds) ? options.entryIds : [];
     for (const entryId of entryIds) args.push('--entry-id', String(entryId));
@@ -343,6 +345,7 @@ function startUpload(options) {
       DT_METADATA: path.resolve(options.metadata),
       DT_ASSETS: path.resolve(options.assets),
       DT_MANIFEST: path.resolve(options.uploadManifest),
+      DT_UPLOAD_KIND: options.uploadKind || 'save',
       DT_LOG: path.join(path.resolve(options.output), 'dt-source.log'),
       DT_PAIRING_PREFIX: prefixPath,
       DT_EXPECTED_HOST_ID: String(options.hostId),

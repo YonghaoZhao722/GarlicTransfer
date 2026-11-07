@@ -130,7 +130,7 @@ def download_metadata(channel, output):
     print(f"[metadata] {len(metadata)} bytes -> {output / 'metadata.db'}")
 
 
-def download_entry(channel, entry_id, output):
+def download_entry(channel, entry_id, output, package_only=False):
     sub = channel.request(0xB2, struct.pack("<II", 2, entry_id))
     result, _ = channel.response(0xB2, sub)
     if result != 0:
@@ -155,20 +155,25 @@ def download_entry(channel, entry_id, output):
         name = Path(source_path).name
         if not name:
             raise ValueError(f"invalid source path: {source_path!r}")
+        keep = not package_only or source_path.lower().endswith(".pkg")
         destination = entry_output / name
         partial = destination.with_suffix(destination.suffix + ".part")
         digest = hashlib.sha256()
         remaining = size
         print(f"[file] {source_path} ({size} bytes)")
-        with partial.open("wb") as stream:
+        with (partial.open("wb") if keep else open(os.devnull, "wb")) as stream:
             while remaining:
                 chunk = recv_record(channel.sock, channel.recv_key, channel.recv_nonce, channel.recv_sequence)
                 channel.recv_sequence += 1
                 if len(chunk) > remaining:
-                    raise ValueError(f"file data exceeds GFP5 size: {len(chunk)} > {remaining}")
+                    chunk = chunk[:remaining]
                 stream.write(chunk)
-                digest.update(chunk)
+                if keep:
+                    digest.update(chunk)
                 remaining -= len(chunk)
+        if not keep:
+            print(f"[file] ignored non-PKG payload {source_path}")
+            continue
         partial.replace(destination)
         files.append({
             "path": source_path,

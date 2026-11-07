@@ -148,6 +148,32 @@ def sync_upload_metadata(metadata_path, entry_id, entries):
         db.close()
 
 
+def sync_other_metadata(metadata_path, entry_id, entries):
+    entry = entries[str(entry_id)]
+    total_size = sum(int(item["size"]) for item in entry["files"])
+    db = sqlite3.connect(metadata_path)
+    try:
+        row = db.execute(
+            "SELECT path, target_type FROM dir_entry_info_tbl WHERE id = ?", (entry_id,)
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"metadata entry {entry_id} is missing for upload")
+        source_path, target_type = row
+        if target_type == 3:
+            raise ValueError("savedata entries require savedata metadata generation")
+        prefix = source_path.rstrip("/") + "/"
+        for item in entry["files"]:
+            if not item.get("path", "").startswith(prefix):
+                raise ValueError(f"entry {entry_id} has a payload path outside {source_path}")
+        db.execute(
+            "UPDATE dir_entry_info_tbl SET actual_size = ?, transfer_size = ?, required_size = ? WHERE id = ?",
+            (total_size, total_size, total_size, entry_id),
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
 def infer_title_id(title_id, files):
     if title_id:
         return title_id.upper()
@@ -325,6 +351,25 @@ def create_filtered_metadata(
     return output
 
 
+def create_other_metadata(output, source_metadata, entry_ids, assets, manifest_output=None):
+    if not entry_ids:
+        raise ValueError("select at least one non-save entry to upload")
+    output = Path(output).expanduser()
+    source_metadata = Path(source_metadata).expanduser()
+    if output.resolve() == source_metadata.resolve():
+        raise ValueError("upload metadata output must differ from the source database")
+    upload_entries = {}
+    for entry_id in entry_ids:
+        actual_id, entry = load_manifest(assets, entry_id)
+        upload_entries[actual_id] = entry
+    output.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source_metadata, output)
+    for entry_id, entry in upload_entries.items():
+        sync_other_metadata(output, entry_id, {str(entry_id): entry})
+    write_upload_manifest(manifest_output or output.with_suffix(".manifest.json"), upload_entries)
+    return output
+
+
 def main():
     parser = argparse.ArgumentParser(description="Create filtered single-user Data Transfer metadata")
     parser.add_argument("--output", required=True)
@@ -335,8 +380,15 @@ def main():
     parser.add_argument("--assets", required=True)
     parser.add_argument("--user-name", default="user")
     parser.add_argument("--manifest-output")
+    parser.add_argument("--other", action="store_true", help="preserve non-savedata transfer entries")
     args = parser.parse_args()
-    if args.source:
+    if args.other:
+        if not args.source:
+            parser.error("--other requires --source")
+        path = create_other_metadata(
+            args.output, args.source, args.entry_id, args.assets, args.manifest_output,
+        )
+    elif args.source:
         path = create_filtered_metadata(
             args.output, args.source, args.user_id, args.user_name,
             args.entry_id, args.assets, args.manifest_output,

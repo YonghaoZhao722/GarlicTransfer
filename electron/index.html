@@ -42,10 +42,10 @@
         <label id="userSelectLabel" hidden>Upload to user
           <select id="userSelect"></select>
         </label>
-        <label id="uploadSaveSelectLabel" hidden>Upload saves (Ctrl/Cmd-click to select multiple)
+        <label id="uploadSaveSelectLabel" hidden>Upload entries (Ctrl/Cmd-click to select multiple)
           <select id="uploadSaveSelect" multiple size="6"></select>
         </label>
-        <button id="confirmUploadBtn" class="primary" hidden>Upload save</button>
+        <button id="confirmUploadBtn" class="primary" hidden>Upload</button>
       </section>
 
       <section class="status-panel">
@@ -54,18 +54,38 @@
       </section>
 
       <section id="saveBrowser" class="panel" hidden>
-        <h2>Console save browser</h2>
+        <h2>Console content browser</h2>
         <div class="browser-actions">
           <label class="checkbox"><input id="selectAllEntries" type="checkbox" disabled> Select all</label>
-          <span id="entryCount">No saves selected</span>
+          <span id="entryCount">No items selected</span>
           <button id="downloadSelectedBtn" type="button" disabled>Download selected</button>
         </div>
+        <h3>Saves</h3>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Select</th><th>Title</th><th>User</th><th>Size (MiB)</th><th>Action</th></tr></thead>
             <tbody id="entries"><tr><td colspan="5" class="empty">Browse a console to list its saves.</td></tr></tbody>
           </table>
         </div>
+        <details id="otherBlock" class="other-drawer" hidden>
+          <summary>Other (experimental)</summary>
+          <details id="appBlock" class="other-category" hidden>
+            <summary>Applications</summary>
+            <div class="table-wrap"><table><thead><tr><th>Select</th><th>Title</th><th>User</th><th>Size (MiB)</th><th>Action</th></tr></thead><tbody id="appEntries"></tbody></table></div>
+          </details>
+          <details id="profileBlock" class="other-category" hidden>
+            <summary>Profiles</summary>
+            <div class="table-wrap"><table><thead><tr><th>Select</th><th>Title</th><th>User</th><th>Size (MiB)</th><th>Action</th></tr></thead><tbody id="profileEntries"></tbody></table></div>
+          </details>
+          <details id="mediaBlock" class="other-category" hidden>
+            <summary>Media</summary>
+            <div class="table-wrap"><table><thead><tr><th>Select</th><th>Title</th><th>User</th><th>Size (MiB)</th><th>Action</th></tr></thead><tbody id="mediaEntries"></tbody></table></div>
+          </details>
+          <details id="miscBlock" class="other-category" hidden>
+            <summary>Miscellaneous</summary>
+            <div class="table-wrap"><table><thead><tr><th>Select</th><th>Title</th><th>User</th><th>Size (MiB)</th><th>Action</th></tr></thead><tbody id="otherEntries"></tbody></table></div>
+          </details>
+        </details>
       </section>
 
       <section class="panel log-panel">

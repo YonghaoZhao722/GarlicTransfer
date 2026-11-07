@@ -22,6 +22,18 @@ def emit(kind, **values):
     print(json.dumps({"type": kind, **values}), flush=True)
 
 
+def entry_kind(path, target_type):
+    if target_type == 3:
+        return "save"
+    if target_type == 1 and path.startswith("/user/app/"):
+        return "app"
+    if target_type == 0:
+        return "profile"
+    if target_type == 2:
+        return "media"
+    return "other"
+
+
 def channel_host(client, interface, response, prefer_ipv6=False):
     if ":" in client:
         return client
@@ -233,7 +245,7 @@ def download(options):
         download_metadata(data, output)
         db = sqlite3.connect(output / "metadata.db")
         rows = db.execute(
-            "SELECT id, path, actual_size FROM dir_entry_info_tbl WHERE target_type = 3 ORDER BY id"
+            "SELECT id, path, actual_size, target_type FROM dir_entry_info_tbl ORDER BY id"
         ).fetchall()
         users = [
             {
@@ -247,12 +259,14 @@ def download(options):
         db.close()
         downloaded_ids = index_downloaded_manifests(output)
         entries = []
-        for entry_id, path, size in rows:
+        for entry_id, path, size, target_type in rows:
             parts = path.strip("/").split("/")
+            kind = entry_kind(path, target_type)
             entries.append({
                 "id": entry_id,
                 "title": Path(path.rstrip("/")).name,
-                "owner": parts[2] if len(parts) > 2 else "unknown",
+                "kind": kind,
+                "owner": parts[2] if kind == "save" and len(parts) > 2 else "console",
                 "size": size,
                 "downloaded": entry_id in downloaded_ids,
             })
@@ -283,9 +297,9 @@ def download(options):
             return selected_rows
 
         def download_rows(selected_rows):
-            for index, (entry_id, _, _) in enumerate(selected_rows, 1):
+            for index, (entry_id, path, _, _) in enumerate(selected_rows, 1):
                 emit("status", step=4, message=f"Downloading entry {entry_id} ({index}/{len(selected_rows)}).")
-                download_entry(data, entry_id, output)
+                download_entry(data, entry_id, output, package_only=path.startswith("/user/app/"))
             index_downloaded_manifests(output)
 
         if options.get("waitForSelection"):
@@ -307,7 +321,7 @@ def download(options):
                     entry["downloaded"] = entry["id"] in downloaded_ids
                 emit(
                     "downloaded",
-                    message=f"Downloaded {len(selected_rows)} selected save entries to {output}",
+                    message=f"Downloaded {len(selected_rows)} selected entries to {output}",
                     users=users,
                     entryIds=[row[0] for row in selected_rows],
                 )
@@ -319,7 +333,7 @@ def download(options):
         download_rows(selected_rows)
         emit(
             "done",
-            message=f"Downloaded {len(selected_rows)} selected save entries to {output}",
+            message=f"Downloaded {len(selected_rows)} selected entries to {output}",
             users=users,
             entryIds=[row[0] for row in selected_rows],
         )
@@ -348,7 +362,7 @@ def list_users(path):
 def list_inventory(path):
     db = sqlite3.connect(path)
     rows = db.execute(
-        "SELECT id, path, actual_size FROM dir_entry_info_tbl WHERE target_type = 3 ORDER BY id"
+        "SELECT id, path, actual_size, target_type FROM dir_entry_info_tbl ORDER BY id"
     ).fetchall()
     users = [
         {
@@ -362,12 +376,14 @@ def list_inventory(path):
     db.close()
     downloaded_ids = index_downloaded_manifests(Path(path).parent)
     entries = []
-    for entry_id, save_path, size in rows:
+    for entry_id, save_path, size, target_type in rows:
         parts = save_path.strip("/").split("/")
+        kind = entry_kind(save_path, target_type)
         entries.append({
             "id": entry_id,
             "title": Path(save_path.rstrip("/")).name,
-            "owner": parts[2] if len(parts) > 2 else "unknown",
+            "kind": kind,
+            "owner": parts[2] if kind == "save" and len(parts) > 2 else "console",
             "size": size,
             "downloaded": entry_id in downloaded_ids,
         })

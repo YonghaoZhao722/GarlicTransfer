@@ -4,7 +4,7 @@ for (const id of [
   'oracleHost', 'interface', 'hardware', 'output', 'metadata', 'assets',
   'useRemoteOracle', 'serverUrl', 'workerKey', 'settingsSave', 'settingsStatus',
   'userSelect', 'userSelectLabel', 'uploadSaveSelect', 'uploadSaveSelectLabel', 'confirmUploadBtn', 'sourcePort', 'dataPort', 'discoveryPort',
-  'downloadBtn', 'downloadSelectedBtn', 'uploadBtn', 'finishBtn', 'cancelBtn', 'powerBtn', 'status', 'entries', 'log',
+  'downloadBtn', 'downloadSelectedBtn', 'uploadBtn', 'finishBtn', 'cancelBtn', 'powerBtn', 'status', 'entries', 'appEntries', 'profileEntries', 'mediaEntries', 'otherEntries', 'log',
   'consoleSelect', 'discoverBtn', 'pairBtn', 'pairingState', 'preferIpv6', 'selectAllEntries', 'entryCount', 'powerModal',
   'pairingModal', 'pairingCancelBtn', 'uploadModal', 'uploadModalCloseBtn',
 ]) controls[id] = byId(id);
@@ -152,15 +152,14 @@ function hideUploadModal() {
   if (controls.uploadModal.open) controls.uploadModal.close();
 }
 
-function renderEntries() {
-  controls.entries.replaceChildren();
-  if (!availableEntries.length) {
-    controls.entries.innerHTML = '<tr><td colspan="5" class="empty">No save entries were found.</td></tr>';
-    updateSelection();
+function renderEntryTable(container, entries, emptyText) {
+  container.replaceChildren();
+  if (!entries.length) {
+    container.innerHTML = `<tr><td colspan="5" class="empty">${emptyText}</td></tr>`;
     return;
   }
   const userNames = new Map(availableUsers.map((user) => [user.id.toLowerCase(), user.name]));
-  for (const entry of availableEntries) {
+  for (const entry of entries) {
     const row = document.createElement('tr');
 
     const selectCell = document.createElement('td');
@@ -183,7 +182,7 @@ function renderEntries() {
     name.textContent = entry.name || 'Unknown title';
     const titleId = document.createElement('span');
     titleId.className = 'title-id';
-    titleId.textContent = `${entry.title} · entry ${entry.id}`;
+    titleId.textContent = `${entry.title} · ${entry.kind || 'save'} · entry ${entry.id}`;
     titleCell.append(name, titleId);
     row.appendChild(titleCell);
 
@@ -210,7 +209,24 @@ function renderEntries() {
       actionCell.appendChild(downloaded);
     }
     row.appendChild(actionCell);
-    controls.entries.appendChild(row);
+    container.appendChild(row);
+  }
+}
+
+function renderEntries() {
+  const saves = availableEntries.filter((entry) => entry.kind === 'save');
+  const others = availableEntries.filter((entry) => entry.kind !== 'save');
+  renderEntryTable(controls.entries, saves, 'No save entries were found.');
+  byId('otherBlock').hidden = !others.length;
+  for (const [kind, block, control] of [
+    ['app', 'appBlock', controls.appEntries],
+    ['profile', 'profileBlock', controls.profileEntries],
+    ['media', 'mediaBlock', controls.mediaEntries],
+    ['other', 'miscBlock', controls.otherEntries],
+  ]) {
+    const entries = others.filter((entry) => entry.kind === kind);
+    byId(block).hidden = !entries.length;
+    renderEntryTable(control, entries, `No ${kind} entries were found.`);
   }
   updateSelection();
 }
@@ -274,7 +290,15 @@ async function startUploadSource() {
   const selectedUser = controls.userSelect.selectedOptions[0];
   const entryIds = [...controls.uploadSaveSelect.selectedOptions].map((option) => Number(option.value));
   if (!selectedUser || !entryIds.length) {
-    status('Select one user and at least one downloaded save before continuing.');
+    status('Select one user and at least one downloaded entry before continuing.');
+    return;
+  }
+  const uploadKinds = new Set(entryIds.map((id) => {
+    const entry = availableEntries.find((candidate) => candidate.id === id);
+    return entry?.kind === 'save' ? 'save' : 'other';
+  }));
+  if (uploadKinds.size !== 1) {
+    status('Upload saves and other content in separate batches.');
     return;
   }
   const current = {
@@ -282,6 +306,7 @@ async function startUploadSource() {
     userId: selectedUser.value,
     userName: selectedUser.dataset.name || 'user',
     entryIds,
+    uploadKind: uploadKinds.values().next().value,
   };
   activeTransfer = 'upload';
   showUploadModal();
@@ -289,7 +314,7 @@ async function startUploadSource() {
   controls.confirmUploadBtn.hidden = true;
   controls.userSelectLabel.hidden = true;
   controls.uploadSaveSelectLabel.hidden = true;
-  status(`Step 1/3: building metadata for ${entryIds.length} save(s) and one user.`);
+  status(`Step 1/3: building metadata for ${entryIds.length} entries.`);
   try {
     await window.saveTransfer.upload(current);
   } catch (error) {
@@ -320,13 +345,13 @@ function showUploadConfirmation() {
     controls.userSelectLabel.hidden = true;
     controls.uploadSaveSelectLabel.hidden = true;
     controls.confirmUploadBtn.hidden = true;
-    status('No downloaded save files are available. Download the saves before uploading them.');
+    status('No downloaded files are available. Download content before uploading it.');
     return;
   }
   controls.userSelectLabel.hidden = false;
   controls.uploadSaveSelectLabel.hidden = false;
   controls.confirmUploadBtn.hidden = false;
-  status('Select one user and one or more saves.');
+  status('Select one user and one or more entries.');
 }
 
 async function startUpload() {

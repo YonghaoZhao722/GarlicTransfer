@@ -10,7 +10,7 @@ import sys
 import threading
 from pathlib import Path
 
-from poc.dt_metadata import sync_upload_metadata, validate_payload
+from poc.dt_metadata import sync_other_metadata, sync_upload_metadata, validate_payload
 from poc.dt_pair import save_prefix
 from poc.dt_ppr_client import derive_with_oracle
 from poc.dt_psk_client import derive_keys, recv_exact, recv_record, send_record
@@ -237,7 +237,10 @@ def send_save_chunks(sock, key, nonce, sequence, file_type, file_id):
     if assets and all(path.is_file() for _, path in assets):
         for entry, path in assets:
             validate_payload(path, file_id, entry)
-        sync_upload_metadata(os.environ.get("DT_METADATA", METADATA_PATH), file_id, manifest)
+        if os.environ.get("DT_UPLOAD_KIND") == "other":
+            sync_other_metadata(os.environ.get("DT_METADATA", METADATA_PATH), file_id, manifest)
+        else:
+            sync_upload_metadata(os.environ.get("DT_METADATA", METADATA_PATH), file_id, manifest)
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
         for entry, path in assets:
             print(f"[data] GFP5 id={file_id} type={file_type} path={entry['path']} size={entry['size']}", flush=True)
