@@ -6,7 +6,7 @@ for (const id of [
   'userSelect', 'userSelectLabel', 'uploadSaveSelect', 'uploadSaveSelectLabel', 'confirmUploadBtn', 'sourcePort', 'dataPort', 'discoveryPort',
   'downloadBtn', 'downloadSelectedBtn', 'uploadBtn', 'finishBtn', 'cancelBtn', 'powerBtn', 'status', 'entries', 'appEntries', 'profileEntries', 'mediaEntries', 'otherEntries', 'log',
   'consoleSelect', 'discoverBtn', 'pairBtn', 'pairingState', 'preferIpv6', 'selectAllEntries', 'entryCount', 'powerModal',
-  'pairingModal', 'pairingCancelBtn', 'uploadModal', 'uploadModalCloseBtn',
+  'pairingModal', 'pairingCancelBtn', 'uploadModal', 'uploadModalCloseBtn', 'externalSavePath', 'externalTitleId', 'uploadExternalBtn', 'chooseExternalSaveBtn',
 ]) controls[id] = byId(id);
 let activeTransfer = null;
 let availableUsers = [];
@@ -37,6 +37,7 @@ function options() {
     output: controls.output.value.trim() || 'dt_downloads',
     metadata: controls.metadata.value.trim(),
     assets: controls.assets.value.trim() || controls.output.value.trim() || 'dt_downloads',
+    titleId: controls.externalTitleId.value.trim().toUpperCase(),
     userId: controls.userSelect.value,
     userName: controls.userSelect.selectedOptions[0]?.dataset.name || 'user',
     sourcePort: Number(controls.sourcePort.value || 1004),
@@ -509,6 +510,40 @@ controls.selectAllEntries.addEventListener('change', () => {
 });
 controls.uploadBtn.addEventListener('click', startUpload);
 controls.confirmUploadBtn.addEventListener('click', startUploadSource);
+controls.chooseExternalSaveBtn.addEventListener('click', async () => {
+  const selected = await window.saveTransfer.chooseExternalSave();
+  if (selected) controls.externalSavePath.value = selected;
+});
+controls.uploadExternalBtn.addEventListener('click', async () => {
+  if (activeTransfer || browseSessionActive) return;
+  const selectedUser = controls.userSelect.selectedOptions[0];
+  const externalImage = controls.externalSavePath.value.trim();
+  const titleId = controls.externalTitleId.value.trim().toUpperCase();
+  if (!selectedUser || !externalImage || !/^[A-Z0-9]{9}$/.test(titleId)) {
+    status('Select a target user, an encrypted save image, and a nine-character title ID.');
+    return;
+  }
+  const current = {
+    ...(pendingUploadOptions || options()),
+    userId: selectedUser.value,
+    userName: selectedUser.dataset.name || 'user',
+    titleId,
+    externalImage,
+    entryIds: [],
+    uploadKind: 'external',
+  };
+  activeTransfer = 'upload';
+  showUploadModal();
+  busy(true);
+  status('Step 1/3: building metadata for the external save.');
+  try {
+    await window.saveTransfer.upload(current);
+  } catch (error) {
+    status(`Could not start external save upload: ${error.message}`);
+    activeTransfer = null;
+    busy(false);
+  }
+});
 controls.finishBtn.addEventListener('click', async () => {
   if (!browseSessionActive || activeTransfer) return;
   if (!window.confirm('Close Data Transfer and reboot the console now?')) return;

@@ -304,6 +304,7 @@ function createMetadata(options) {
     fs.mkdirSync(options.output, { recursive: true });
     const generatedMetadata = path.join(options.output, 'generated-metadata.db');
     const generatedManifest = path.join(options.output, 'generated-upload-manifest.json');
+    if (options.uploadKind === 'external') options.assets = path.join(options.output, 'external-save');
     const args = [
       '-m', 'poc.dt_metadata',
       '--output', generatedMetadata,
@@ -312,7 +313,9 @@ function createMetadata(options) {
       '--user-name', options.userName || 'user',
       '--manifest-output', generatedManifest,
     ];
-    if (options.uploadKind === 'other') {
+    if (options.uploadKind === 'external') {
+      args.push('--external-image', options.externalImage, '--title-id', options.titleId || '');
+    } else if (options.uploadKind === 'other') {
       args.push('--other', '--source', options.metadata || path.join(options.output, 'metadata.db'));
     } else if (options.metadata) args.push('--source', options.metadata);
     else args.push('--title-id', options.titleId || '');
@@ -474,6 +477,14 @@ ipcMain.handle('dialog:metadata', async () => {
 
 ipcMain.handle('dialog:assets', async () => {
   const result = await dialog.showOpenDialog(window, { properties: ['openDirectory'] });
+  return result.canceled ? null : result.filePaths[0];
+});
+
+ipcMain.handle('dialog:external-save', async () => {
+  const result = await dialog.showOpenDialog(window, {
+    properties: ['openFile'],
+    filters: [{ name: 'PS5 save containers', extensions: ['bin', 'img', 'save'] }, { name: 'All files', extensions: ['*'] }],
+  });
   return result.canceled ? null : result.filePaths[0];
 });
 

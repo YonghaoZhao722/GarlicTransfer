@@ -46,6 +46,14 @@
           <select id="uploadSaveSelect" multiple size="6"></select>
         </label>
         <button id="confirmUploadBtn" class="primary" hidden>Upload</button>
+        <div class="external-save">
+          <h3>External save (not in the console library)</h3>
+          <label>Encrypted save container
+            <span class="file-row"><input id="externalSavePath" readonly spellcheck="false" placeholder="Select an sdimg_* or other encrypted save image"><button id="chooseExternalSaveBtn" type="button">Select file</button></span>
+          </label>
+          <label>Title ID<input id="externalTitleId" spellcheck="false" placeholder="PPSA12345" maxlength="9"></label>
+          <button id="uploadExternalBtn" class="secondary" type="button">Upload external save</button>
+        </div>
       </section>
 
       <section class="status-panel">
@@ -147,7 +155,7 @@
   <dialog id="uploadModal" class="power-modal pairing-modal">
     <h2>Upload save</h2>
     <ol>
-      <li>Delete the selected save data on the PS5.</li>
+      <li>If replacing an existing save, delete it on the PS5. New external saves do not need this step.</li>
       <li>Open <strong>Settings → System → System Software → Data Transfer</strong> and select <strong>GarlicTransfer</strong>.</li>
       <li>Follow the on-screen prompts to import the data.</li>
     </ol>

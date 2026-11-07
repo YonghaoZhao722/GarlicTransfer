@@ -228,6 +228,47 @@ def create_metadata(output, user_id, title_id, entry_id, assets, user_name="user
     return output
 
 
+def create_external_save(output, user_id, title_id, image_path, assets, user_name="user", manifest_output=None):
+    user_id = validate_user(user_id, user_name)
+    title_id = title_id.upper()
+    if not re.fullmatch(r"[A-Z0-9]{9}", title_id):
+        raise ValueError("title ID must be exactly 9 letters or digits")
+    image_path = Path(image_path).expanduser()
+    if not image_path.is_file() or image_path.stat().st_size <= 0:
+        raise ValueError("external save container is missing or empty")
+    entry_id = 0x10000
+    assets = Path(assets).expanduser()
+    entry_directory = assets / str(entry_id)
+    entry_directory.mkdir(parents=True, exist_ok=True)
+    destination = entry_directory / image_path.name
+    if image_path.resolve() != destination.resolve():
+        shutil.copyfile(image_path, destination)
+    source_path = f"/user/home/{user_id}/savedata_prospero/{title_id}/{image_path.name}"
+    header = bytearray(1304)
+    struct.pack_into("<I", header, 0, 0x35504647)
+    struct.pack_into("<I", header, 4, entry_id)
+    struct.pack_into("<Q", header, 240, destination.stat().st_size)
+    header[276:276 + len(source_path)] = source_path.encode()
+    final_header = bytearray(1304)
+    struct.pack_into("<I", final_header, 0, 0x35504647)
+    struct.pack_into("<I", final_header, 4, entry_id)
+    final_header[274] = 1
+    item = {
+        "path": source_path,
+        "file": image_path.name,
+        "size": destination.stat().st_size,
+        "sha256": "",
+        "header": header.hex(),
+    }
+    manifest = {
+        "entry_id": entry_id,
+        "files": [item],
+        str(entry_id): {"files": [item], "final_header": final_header.hex()},
+    }
+    (entry_directory / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    return create_metadata(output, user_id, title_id, entry_id, assets, user_name, manifest_output)
+
+
 def target_path(source_path, user_id):
     parts = source_path.strip("/").split("/")
     if len(parts) < 4 or parts[:2] != ["user", "home"]:
@@ -381,8 +422,14 @@ def main():
     parser.add_argument("--user-name", default="user")
     parser.add_argument("--manifest-output")
     parser.add_argument("--other", action="store_true", help="preserve non-savedata transfer entries")
+    parser.add_argument("--external-image", type=Path, help="encrypted save container to import")
     args = parser.parse_args()
-    if args.other:
+    if args.external_image:
+        path = create_external_save(
+            args.output, args.user_id, args.title_id, args.external_image,
+            args.assets, args.user_name, args.manifest_output,
+        )
+    elif args.other:
         if not args.source:
             parser.error("--other requires --source")
         path = create_other_metadata(
