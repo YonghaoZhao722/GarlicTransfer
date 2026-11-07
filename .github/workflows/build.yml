@@ -35,11 +35,11 @@ jobs:
         run: |
           Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip' -OutFile build/python-embed.zip
           Expand-Archive -Path build/python-embed.zip -DestinationPath build/windows-python -Force
-          python -m pip download --only-binary=:all: --python-version 312 --platform win_amd64 'cryptography==44.0.3' --no-deps --dest build/wheels
+          python -m pip download --only-binary=:all: --python-version 312 --platform win_amd64 'cryptography==44.0.3' --dest build/wheels
           Get-ChildItem build/wheels/*.whl | ForEach-Object { Expand-Archive -Path $_.FullName -DestinationPath build/windows-python -Force }
           Add-Content -Path build/windows-python/python312._pth -Value '..'
           Copy-Item -Recurse poc build/poc
-          & build/windows-python/python.exe -c "import cryptography; print(cryptography.__version__)"
+          & build/windows-python/python.exe -c "import cffi; from cryptography.hazmat.primitives import cmac; print(cryptography.__version__)"
           & build/windows-python/python.exe -c "import poc.dt_discovery; print('discovery import ok')"
       - run: npm ci
       - run: npx electron-builder --win --publish never
