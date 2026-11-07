@@ -216,7 +216,10 @@ function startPairing(options) {
         }
       }
     });
-    child.stderr.on('data', () => { session.error ||= 'Pairing helper failed'; });
+    child.stderr.on('data', (data) => {
+      send('log', { message: `[helper] ${String(data).trim()}` });
+      session.error ||= 'Pairing helper failed';
+    });
     child.on('error', (error) => {
       if (active === session) finish(error);
     });

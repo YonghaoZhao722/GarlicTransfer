@@ -1,6 +1,6 @@
 {
   "name": "garlic-transfer",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "private": true,
   "description": "Guided PS5 save download and upload using local or volunteer PPR oracles",
   "author": {
@@ -41,6 +41,11 @@
       {
         "from": "requirements.txt",
         "to": "requirements.txt"
+      },
+      {
+        "from": "build/windows-python",
+        "to": "python",
+        "filter": ["**/*"]
       },
       {
         "from": "build/linux",
