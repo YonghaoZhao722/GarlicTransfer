@@ -124,7 +124,7 @@ function startDownload(options) {
     let buffer = '';
     child.stdout.on('data', (chunk) => {
       buffer += chunk;
-      while (buffer.includes('\n')) {
+      while (active && buffer.includes('\n')) {
         const index = buffer.indexOf('\n');
         const line = buffer.slice(0, index);
         buffer = buffer.slice(index + 1);
@@ -195,7 +195,7 @@ function startPairing(options) {
     let buffer = '';
     child.stdout.on('data', (chunk) => {
       buffer += chunk;
-      while (buffer.includes('\n')) {
+      while (active && buffer.includes('\n')) {
         const index = buffer.indexOf('\n');
         const line = buffer.slice(0, index);
         buffer = buffer.slice(index + 1);
@@ -340,12 +340,14 @@ function startUpload(options) {
   (async () => {
     await createMetadata(options);
     await ensureOracle(options);
+    const prefixPath = pairingPrefixPath(app.getPath('userData'), options);
+    fs.mkdirSync(path.dirname(prefixPath), { recursive: true, mode: 0o700 });
     const sourceEnvironment = {
       DT_METADATA: path.resolve(options.metadata),
       DT_ASSETS: path.resolve(options.assets),
       DT_MANIFEST: path.resolve(options.uploadManifest),
       DT_LOG: path.join(path.resolve(options.output), 'dt-source.log'),
-      DT_PAIRING_PREFIX: pairingPrefixPath(app.getPath('userData'), options),
+      DT_PAIRING_PREFIX: prefixPath,
       DT_EXPECTED_HOST_ID: String(options.hostId),
       DT_EXIT_ON_EOF: '1',
       DT_AUTO_POWER: '1',
@@ -359,6 +361,10 @@ function startUpload(options) {
       DT_ORACLE_HOST: String(options.oracleHost || '127.0.0.1'),
       DT_ORACLE_PORT: String(options.oraclePort || 9022),
     };
+    if (process.platform !== 'win32') {
+      sourceEnvironment.DT_PAIRING_UID = String(process.getuid());
+      sourceEnvironment.DT_PAIRING_GID = String(process.getgid());
+    }
     if (options.advertiseAddress) {
       sourceEnvironment.DT_ADVERTISE = String(options.advertiseAddress);
     }
@@ -387,7 +393,7 @@ function startUpload(options) {
     let buffer = '';
     child.stdout.on('data', (chunk) => {
       buffer += chunk;
-      while (buffer.includes('\n')) {
+      while (active && buffer.includes('\n')) {
         const index = buffer.indexOf('\n');
         const line = buffer.slice(0, index);
         buffer = buffer.slice(index + 1);
