@@ -17,11 +17,18 @@ jobs:
       - run: npm ci
       - run: npx electron-builder --linux --publish never
       - uses: actions/upload-artifact@v4
+        if: ${{ github.server_url == 'https://github.com' }}
         with:
           name: linux
           path: |
             dist/*.AppImage
             dist/*.deb
+      - name: Publish Forgejo release assets
+        if: ${{ startsWith(github.ref, 'refs/tags/') && github.server_url != 'https://github.com' }}
+        shell: bash
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash .github/scripts/publish-forgejo.sh dist/*.AppImage dist/*.deb
 
   build-windows:
     runs-on: windows-latest
@@ -44,11 +51,18 @@ jobs:
       - run: npm ci
       - run: npx electron-builder --win --publish never
       - uses: actions/upload-artifact@v4
+        if: ${{ github.server_url == 'https://github.com' }}
         with:
           name: windows
           path: |
             dist/*.exe
             dist/*.blockmap
+      - name: Publish Forgejo release assets
+        if: ${{ startsWith(github.ref, 'refs/tags/') && github.server_url != 'https://github.com' }}
+        shell: bash
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash .github/scripts/publish-forgejo.sh dist/*.exe dist/*.blockmap
 
   build-macos:
     runs-on: macos-latest
@@ -63,11 +77,19 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - uses: actions/upload-artifact@v4
+        if: ${{ github.server_url == 'https://github.com' }}
         with:
           name: macos
           path: dist/*.dmg
+      - name: Publish Forgejo release assets
+        if: ${{ startsWith(github.ref, 'refs/tags/') && github.server_url != 'https://github.com' }}
+        shell: bash
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash .github/scripts/publish-forgejo.sh dist/*.dmg
 
   smoke-windows:
+    if: ${{ github.server_url == 'https://github.com' }}
     runs-on: windows-latest
     needs: build-windows
     steps:
@@ -81,6 +103,11 @@ jobs:
           $installer = (Get-ChildItem installer/*.exe).FullName
           Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$env:TEMP\smoke-install") -Wait
           $python = "$env:TEMP\smoke-install\resources\python\python.exe"
+          $deadline = [DateTime]::UtcNow.AddSeconds(30)
+          while (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
+              if ([DateTime]::UtcNow -gt $deadline) { throw "Bundled Python not found at $python" }
+              Start-Sleep -Milliseconds 250
+          }
           $env:PYTHONPATH = "$env:TEMP\smoke-install\resources"
           & $python -c "import cffi; from cryptography.hazmat.primitives import cmac; print('CFFI and CMAC OK')"
           & $python -c "import poc.dt_discovery, poc.dt_pair, poc.dt_backend; print('Backend imports OK')"
@@ -90,7 +117,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Firewall helper /help failed with exit code $LASTEXITCODE" }
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: ${{ github.server_url == 'https://github.com' && startsWith(github.ref, 'refs/tags/v') }}
     needs: [build-linux, build-windows, smoke-windows]
     runs-on: ubuntu-latest
     permissions:
