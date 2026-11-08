@@ -2,6 +2,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('saveTransfer', {
   pairingAvailable: true,
+  firewallAvailable: process.platform === 'win32',
+  runFirewallHelper: () => ipcRenderer.invoke('windows:firewall-helper'),
   chooseOutput: () => ipcRenderer.invoke('dialog:output'),
   chooseMetadata: () => ipcRenderer.invoke('dialog:metadata'),
   chooseAssets: () => ipcRenderer.invoke('dialog:assets'),
@@ -19,6 +21,7 @@ contextBridge.exposeInMainWorld('saveTransfer', {
   cancel: () => ipcRenderer.invoke('transfer:cancel'),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings) => ipcRenderer.invoke('settings:set', settings),
+  version: () => ipcRenderer.invoke('app:version'),
   onEvent: (callback) => {
     const listener = (_event, detail) => callback(detail);
     ipcRenderer.on('transfer:event', listener);

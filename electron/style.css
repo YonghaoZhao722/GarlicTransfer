@@ -62,6 +62,7 @@ button:disabled { opacity: .45; cursor: default; }
 .pairing-modal ol { line-height: 1.6; padding-left: 22px; }
 .pairing-modal button { display: block; margin: 18px auto 0; }
 #pairingState.paired { color: #55d98d; font-weight: 700; }
+.version-string { margin: 8px 0 0; color: #73869b; font-size: 11px; }
 .browser-actions { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .browser-actions .checkbox { flex-direction: row; align-items: center; }
 #entryCount { color: #93a4b9; font-size: 12px; margin-right: auto; }

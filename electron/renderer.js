@@ -2,7 +2,8 @@ const byId = (id) => document.getElementById(id);
 const controls = {};
 for (const id of [
   'oracleHost', 'interface', 'hardware', 'output', 'metadata', 'assets',
-  'useRemoteOracle', 'serverUrl', 'workerKey', 'settingsSave', 'settingsStatus',
+  'useRemoteOracle', 'serverUrl', 'workerKey', 'settingsSave', 'settingsStatus', 'appVersion',
+  'firewallSettings', 'firewallHelperBtn', 'firewallStatus',
   'userSelect', 'userSelectLabel', 'uploadSaveSelect', 'uploadSaveSelectLabel', 'confirmUploadBtn', 'sourcePort', 'dataPort', 'discoveryPort',
   'downloadBtn', 'downloadSelectedBtn', 'uploadBtn', 'finishBtn', 'cancelBtn', 'powerBtn', 'status', 'entries', 'appEntries', 'profileEntries', 'mediaEntries', 'otherEntries', 'log',
   'consoleSelect', 'discoverBtn', 'manualHost', 'manualConnectBtn', 'pairBtn', 'pairingState', 'preferIpv6', 'selectAllEntries', 'entryCount', 'powerModal',
@@ -486,6 +487,20 @@ controls.settingsSave.addEventListener('click', async () => {
   controls.settingsStatus.textContent = 'Settings saved to config.ini.';
 });
 
+controls.firewallSettings.hidden = !window.saveTransfer.firewallAvailable;
+controls.firewallHelperBtn.addEventListener('click', async () => {
+  controls.firewallHelperBtn.disabled = true;
+  controls.firewallStatus.textContent = 'Opening the firewall helper…';
+  try {
+    await window.saveTransfer.runFirewallHelper();
+    controls.firewallStatus.textContent = 'Accept the Windows permission prompt. The helper will attach to GarlicTransfer and remove its rules when the app closes.';
+  } catch (error) {
+    controls.firewallStatus.textContent = `Could not open the firewall helper: ${error.message}`;
+  } finally {
+    controls.firewallHelperBtn.disabled = false;
+  }
+});
+
 async function loadSettings() {
   const settings = await window.saveTransfer.getSettings();
   for (const [name, value] of Object.entries(settings)) {
@@ -497,6 +512,9 @@ async function loadSettings() {
   profileRoot = controls.output.value || 'dt_downloads';
   applyConsoleProfile();
   updateOracleMode();
+  window.saveTransfer.version().then((version) => {
+    controls.appVersion.textContent = `v${version}`;
+  });
 }
 controls.consoleSelect.addEventListener('change', applyConsoleProfile);
 loadSettings();

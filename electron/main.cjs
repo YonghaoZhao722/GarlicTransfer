@@ -516,6 +516,24 @@ ipcMain.handle('transfer:finish', () => {
 ipcMain.handle('transfer:upload', (_event, options) => startUpload(options));
 ipcMain.handle('transfer:users', (_event, metadataPath) => getUsers(metadataPath));
 ipcMain.handle('transfer:inventory', (_event, metadataPath) => getInventory(metadataPath));
+ipcMain.handle('app:version', () => app.getVersion());
+ipcMain.handle('windows:firewall-helper', () => {
+  if (process.platform !== 'win32') throw new Error('the firewall helper is only available on Windows');
+  const helper = app.isPackaged
+    ? path.join(path.dirname(app.getPath('exe')), 'Garlic-Firewall-Helper.bat')
+    : path.join(__dirname, '..', 'Garlic-Firewall-Helper.bat');
+  if (!fs.existsSync(helper)) throw new Error('Garlic-Firewall-Helper.bat is missing beside GarlicTransfer.exe');
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.env.ComSpec || 'cmd.exe', [
+      '/d', '/s', '/c', 'start', '', helper, '/attach', String(process.pid),
+    ], { cwd: path.dirname(helper), detached: true, stdio: 'ignore', windowsHide: false });
+    child.once('error', reject);
+    child.once('spawn', () => {
+      child.unref();
+      resolve();
+    });
+  });
+});
 ipcMain.handle('transfer:discover', (_event, options) => getConsoles(options));
 ipcMain.handle('transfer:power', () => {
   if (active && active.kind === 'upload' && active.process && active.process.exitCode === null) {

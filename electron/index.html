@@ -138,9 +138,17 @@
         <label class="checkbox"><input id="preferIpv6" type="checkbox"> Use IPv6 channel (advanced; IPv4 is the proven default)</label>
       </section>
 
+      <section id="firewallSettings" class="panel connections" hidden>
+        <h2>Windows network access</h2>
+        <p class="hint">If discovery or pairing is blocked, allow temporary local-network access for GarlicTransfer and its backend. Windows will ask for administrator permission; the rules are removed when GarlicTransfer closes.</p>
+        <button id="firewallHelperBtn" class="secondary" type="button">Allow local network access</button>
+        <p id="firewallStatus" class="hint" aria-live="polite"></p>
+      </section>
+
       <section class="panel settings-actions">
         <button id="settingsSave" class="primary">Save settings</button>
         <p id="settingsStatus">Settings are stored in config.ini.</p>
+        <p id="appVersion" class="version-string"></p>
       </section>
     </section>
   </main>

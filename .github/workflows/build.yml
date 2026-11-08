@@ -84,6 +84,10 @@ jobs:
           $env:PYTHONPATH = "$env:TEMP\smoke-install\resources"
           & $python -c "import cffi; from cryptography.hazmat.primitives import cmac; print('CFFI and CMAC OK')"
           & $python -c "import poc.dt_discovery, poc.dt_pair, poc.dt_backend; print('Backend imports OK')"
+          $helper = "$env:TEMP\smoke-install\Garlic-Firewall-Helper.bat"
+          if (-not (Test-Path -LiteralPath $helper -PathType Leaf)) { throw 'Firewall helper missing beside GarlicTransfer.exe' }
+          & $helper /help
+          if ($LASTEXITCODE -ne 0) { throw "Firewall helper /help failed with exit code $LASTEXITCODE" }
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
