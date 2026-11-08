@@ -119,12 +119,21 @@ def write_upload_manifest(output, entries):
     output.write_text(json.dumps({str(entry_id): entry for entry_id, entry in entries.items()}, indent=2) + "\n")
 
 
+def backup_size(files):
+    return sum(
+        int(item["size"])
+        for item in files
+        if item.get("file", "").startswith("sdimg_sce_bu_")
+        or (item.get("file", "").startswith("sce_bu_") and item.get("file", "").endswith(".bin"))
+    )
+
+
 def sync_upload_metadata(metadata_path, entry_id, entries):
     entry = entries[str(entry_id)]
     title_id = infer_title_id("", entry["files"])
     total_size = sum(int(item["size"]) for item in entry["files"])
-    bu_size = max(
-        int(item["size"])
+    bu_size = backup_size(
+        item
         for candidate in entries.values()
         for item in candidate["files"]
         if infer_title_id("", [item]) == title_id
@@ -195,8 +204,8 @@ def create_metadata(output, user_id, title_id, entry_id, assets, user_name="user
     if not re.fullmatch(r"[A-Z0-9]{9}", title_id):
         raise ValueError("title ID must be exactly 9 letters or digits")
     total_size = sum(int(item["size"]) for item in files)
-    bu_size = max(int(item["size"]) for item in files)
-    if total_size <= 0 or bu_size <= 0:
+    bu_size = backup_size(files)
+    if total_size <= 0:
         raise ValueError("save files must not be empty")
 
     output = Path(output).expanduser()
@@ -370,8 +379,8 @@ def create_filtered_metadata(
         for title_id, title_rows in entries_by_title.items():
             original = next((row for row in savedata_rows if row[1].upper() == title_id), None)
             total_size = sum(int(row[7]) for row in title_rows)
-            bu_size = max(
-                int(item["size"])
+            bu_size = backup_size(
+                item
                 for row in title_rows
                 for item in upload_entries[row[0]]["files"]
             )

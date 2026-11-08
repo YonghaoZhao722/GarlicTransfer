@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from poc.dt_metadata import create_filtered_metadata
+from poc.dt_metadata import create_metadata, create_filtered_metadata
 
 
 USER_ID = "138c0dbf"
@@ -150,6 +150,56 @@ class MetadataSafetyTests(unittest.TestCase):
                 titles = db.execute("SELECT title_id, size FROM users_savedata_tbl").fetchall()
             self.assertEqual(row, (ENTRY_ID, payload_path, 9, 9, 9))
             self.assertEqual(titles, [(TITLE_ID, 9)])
+
+    def test_no_backup_files_have_zero_bu_size(self):
+        import sqlite3
+        from contextlib import closing
+
+        with tempfile.TemporaryDirectory() as folder:
+            root, assets, source = self.make_case(folder)
+            output = create_metadata(
+                root / "single.db", USER_ID, TITLE_ID, ENTRY_ID, assets, "test-user"
+            )
+            with closing(sqlite3.connect(output)) as db:
+                self.assertEqual(db.execute("SELECT bu_size FROM users_savedata_tbl").fetchone()[0], 0)
+
+    def test_backup_size_counts_only_backup_files(self):
+        import sqlite3
+        from contextlib import closing
+
+        with tempfile.TemporaryDirectory() as folder:
+            root, assets, source = self.make_case(folder)
+            for name, payload in (("sdimg_sce_bu_save", b"0123456789"), ("sce_bu_save.bin", b"ab")):
+                source_path = f"/user/home/{USER_ID}/savedata_prospero/{TITLE_ID}/{name}"
+                header = bytearray(1304)
+                struct.pack_into("<I", header, 0, 0x35504647)
+                struct.pack_into("<I", header, 4, ENTRY_ID)
+                struct.pack_into("<Q", header, 240, len(payload))
+                header[276:276 + len(source_path)] = source_path.encode()
+                item = {
+                    "path": source_path,
+                    "file": name,
+                    "size": len(payload),
+                    "sha256": "",
+                    "header": header.hex(),
+                }
+                for manifest_path in (assets / "manifest.json", assets / str(ENTRY_ID) / "manifest.json"):
+                    manifest = json.loads(manifest_path.read_text())
+                    manifest["files"].append(item)
+                    manifest[str(ENTRY_ID)]["files"].append(item)
+                    manifest_path.write_text(json.dumps(manifest))
+                (assets / str(ENTRY_ID) / name).write_bytes(payload)
+
+            outputs = [
+                create_metadata(root / "single.db", USER_ID, TITLE_ID, ENTRY_ID, assets, "test-user"),
+                self.generate(root, assets, source),
+            ]
+            for output in outputs:
+                with closing(sqlite3.connect(output)) as db:
+                    self.assertEqual(
+                        db.execute("SELECT size, bu_size FROM users_savedata_tbl").fetchone(),
+                        (20, 12),
+                    )
 
     def test_send_time_resize_refreshes_header_manifest_and_metadata(self):
         import os
