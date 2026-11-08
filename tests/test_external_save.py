@@ -20,9 +20,15 @@ class ExternalSaveTests(unittest.TestCase):
             assets = root / "cache"
             output = root / "metadata.db"
             manifest_output = root / "manifest.json"
+            source = root / "source.db"
+            template = Path(__file__).resolve().parent.parent / "poc" / "templates" / "single-save.db"
+            import shutil
+            shutil.copyfile(template, source)
+            with sqlite3.connect(source) as db:
+                db.execute("UPDATE user_info_tbl SET user_id = ?", (int("18c60ea2", 16),))
             create_external_save(
                 output, "18c60ea2", "PPSA12345", image, assets,
-                user_name="tester", manifest_output=manifest_output,
+                user_name="tester", manifest_output=manifest_output, source_metadata=source,
             )
             entry_id = 0x10000
             with sqlite3.connect(output) as db:
@@ -48,6 +54,21 @@ class ExternalSaveTests(unittest.TestCase):
                 dt_source.send_save_chunks(None, None, None, 0, 2, entry_id)
             self.assertEqual(send_record.call_count, 3)
             self.assertEqual(send_record.call_args_list[0].args[4], bytes.fromhex(item["header"]))
+
+    def test_external_save_allows_user_without_prior_download(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            image = root / "sdimg_external"
+            image.write_bytes(b"encrypted-save")
+            output = root / "metadata.db"
+            create_external_save(
+                output, "18c60ea2", "PPSA12345", image,
+                root / "cache", user_name="tester",
+            )
+            self.assertTrue(output.is_file())
+            with sqlite3.connect(output) as db:
+                owner = db.execute("SELECT user_id FROM user_info_tbl").fetchone()[0]
+            self.assertEqual(owner, int("18c60ea2", 16))
 
 
 if __name__ == "__main__":

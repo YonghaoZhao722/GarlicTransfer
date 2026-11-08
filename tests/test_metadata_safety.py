@@ -46,6 +46,9 @@ class MetadataSafetyTests(unittest.TestCase):
         source = root / "source.db"
         template = Path(__file__).resolve().parent.parent / "poc" / "templates" / "single-save.db"
         shutil.copyfile(template, source)
+        import sqlite3
+        with sqlite3.connect(source) as db:
+            db.execute("UPDATE user_info_tbl SET user_id = ?", (int(USER_ID, 16),))
         return root, assets, source
 
     def generate(self, root, assets, source, user_id=USER_ID):
@@ -62,12 +65,19 @@ class MetadataSafetyTests(unittest.TestCase):
             self.assertTrue(output.is_file())
             self.assertTrue((root / "generated-manifest.json").is_file())
 
-    def test_cross_user_upload_is_rejected(self):
+    def test_cross_user_upload_is_allowed(self):
+        import sqlite3
+        from contextlib import closing
+
         with tempfile.TemporaryDirectory() as folder:
             root, assets, source = self.make_case(folder)
-            with self.assertRaisesRegex(ValueError, "cross-user upload is blocked"):
-                self.generate(root, assets, source, user_id="18c60eaa")
-            self.assertFalse((root / "generated.db").exists())
+            output = self.generate(root, assets, source, user_id="18c60eaa")
+            self.assertTrue(output.is_file())
+            with closing(sqlite3.connect(output)) as db:
+                path = db.execute("SELECT path FROM dir_entry_info_tbl").fetchone()[0]
+                owner = db.execute("SELECT user_id FROM user_info_tbl").fetchone()[0]
+            self.assertEqual(path, f"/user/home/18c60eaa/savedata_prospero/{TITLE_ID}/")
+            self.assertEqual(owner, int("18c60eaa", 16))
 
     def test_resized_file_regenerates_manifest_and_metadata(self):
         import hashlib
@@ -158,7 +168,8 @@ class MetadataSafetyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root, assets, source = self.make_case(folder)
             output = create_metadata(
-                root / "single.db", USER_ID, TITLE_ID, ENTRY_ID, assets, "test-user"
+                root / "single.db", USER_ID, TITLE_ID, ENTRY_ID, assets, "test-user",
+                source_metadata=source,
             )
             with closing(sqlite3.connect(output)) as db:
                 self.assertEqual(db.execute("SELECT bu_size FROM users_savedata_tbl").fetchone()[0], 0)
@@ -191,7 +202,7 @@ class MetadataSafetyTests(unittest.TestCase):
                 (assets / str(ENTRY_ID) / name).write_bytes(payload)
 
             outputs = [
-                create_metadata(root / "single.db", USER_ID, TITLE_ID, ENTRY_ID, assets, "test-user"),
+                create_metadata(root / "single.db", USER_ID, TITLE_ID, ENTRY_ID, assets, "test-user", source_metadata=source),
                 self.generate(root, assets, source),
             ]
             for output in outputs:

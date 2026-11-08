@@ -238,7 +238,9 @@ function startPairing(options) {
 function getConsoles(options) {
   return new Promise((resolve, reject) => {
     const { discoveryRoutes } = require('./discovery.cjs');
-    const routes = discoveryRoutes();
+    const routes = net.isIP(options.targetHost) === 4
+      ? [{ bind: '', target: options.targetHost }]
+      : discoveryRoutes();
     const port = String(Number(options.discoveryPort) || 1006);
     const child = spawn(pythonBin(), [
       '-m', 'poc.dt_discovery', '--routes', JSON.stringify(routes), '--port', port,
@@ -313,12 +315,14 @@ function createMetadata(options) {
       '--user-name', options.userName || 'user',
       '--manifest-output', generatedManifest,
     ];
+    const sourceMetadata = options.metadata || path.join(options.output, 'metadata.db');
     if (options.uploadKind === 'external') {
-      args.push('--external-image', options.externalImage, '--title-id', options.titleId || '');
+      args.push('--external-image', options.externalImage, '--title-id', options.titleId || '', '--source', sourceMetadata);
     } else if (options.uploadKind === 'other') {
-      args.push('--other', '--source', options.metadata || path.join(options.output, 'metadata.db'));
-    } else if (options.metadata) args.push('--source', options.metadata);
-    else args.push('--title-id', options.titleId || '');
+      args.push('--other', '--source', sourceMetadata);
+    } else {
+      args.push('--source', sourceMetadata);
+    }
     const entryIds = Array.isArray(options.entryIds) ? options.entryIds : [];
     for (const entryId of entryIds) args.push('--entry-id', String(entryId));
     const child = spawn(pythonBin(), args, { cwd: workDir, env: { ...process.env, PYTHONPATH: resourceRoot } });

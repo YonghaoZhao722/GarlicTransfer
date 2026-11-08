@@ -5,7 +5,7 @@ for (const id of [
   'useRemoteOracle', 'serverUrl', 'workerKey', 'settingsSave', 'settingsStatus',
   'userSelect', 'userSelectLabel', 'uploadSaveSelect', 'uploadSaveSelectLabel', 'confirmUploadBtn', 'sourcePort', 'dataPort', 'discoveryPort',
   'downloadBtn', 'downloadSelectedBtn', 'uploadBtn', 'finishBtn', 'cancelBtn', 'powerBtn', 'status', 'entries', 'appEntries', 'profileEntries', 'mediaEntries', 'otherEntries', 'log',
-  'consoleSelect', 'discoverBtn', 'pairBtn', 'pairingState', 'preferIpv6', 'selectAllEntries', 'entryCount', 'powerModal',
+  'consoleSelect', 'discoverBtn', 'manualHost', 'manualConnectBtn', 'pairBtn', 'pairingState', 'preferIpv6', 'selectAllEntries', 'entryCount', 'powerModal',
   'pairingModal', 'pairingCancelBtn', 'uploadModal', 'uploadModalCloseBtn', 'externalSavePath', 'externalTitleId', 'uploadExternalBtn', 'chooseExternalSaveBtn',
 ]) controls[id] = byId(id);
 let activeTransfer = null;
@@ -445,6 +445,38 @@ controls.discoverBtn.addEventListener('click', async () => {
     status(`Discovery failed: ${error.message}`);
   } finally {
     controls.discoverBtn.disabled = false;
+  }
+});
+
+controls.manualConnectBtn.addEventListener('click', async () => {
+  const host = controls.manualHost.value.trim();
+  if (!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) {
+    status('Enter a valid PS5 IPv4 address.');
+    return;
+  }
+  controls.manualConnectBtn.disabled = true;
+  status(`Contacting PS5 at ${host}…`);
+  try {
+    const consoles = await window.saveTransfer.discover({ ...options(), targetHost: host });
+    if (!consoles.length) {
+      status(`No PS5 responded at ${host}. Check the address and network.`);
+      return;
+    }
+    controls.consoleSelect.replaceChildren();
+    for (const console of consoles) {
+      const option = document.createElement('option');
+      option.value = console.host;
+      option.dataset.hostId = console.hostId;
+      option.dataset.firmware = console.firmware;
+      option.textContent = `${console.name} — ${console.host} (${formatFirmware(console.firmware)})`;
+      controls.consoleSelect.appendChild(option);
+    }
+    applyConsoleProfile();
+    status(`Using ${consoles[0].name} at ${host} (${formatFirmware(consoles[0].firmware)}).`);
+  } catch (error) {
+    status(`Could not use ${host}: ${error.message}`);
+  } finally {
+    controls.manualConnectBtn.disabled = false;
   }
 });
 

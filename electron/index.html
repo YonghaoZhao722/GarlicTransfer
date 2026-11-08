@@ -24,6 +24,13 @@
         <h2>Client console</h2>
         <label>Discovered consoles<select id="consoleSelect"><option value="">Discover and select a console</option></select></label>
         <button id="discoverBtn" type="button">Discover consoles</button>
+        <details class="other-drawer manual-console">
+          <summary>Manual PS5 IP address</summary>
+          <div class="manual-fields">
+            <label>PS5 IPv4 address<input id="manualHost" inputmode="decimal" spellcheck="false" placeholder="192.168.0.125"></label>
+            <button id="manualConnectBtn" type="button">Use this PS5</button>
+          </div>
+        </details>
         <div class="pairing-option">
           <button id="pairBtn" type="button" disabled>Pair this PS5 once</button>
           <span id="pairingState" class="hint">Discover a PS5 to check pairing.</span>

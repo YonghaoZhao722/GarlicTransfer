@@ -23,17 +23,6 @@ def validate_user(user_id, user_name):
     return user_id.lower()
 
 
-def validate_save_owner(files, user_id):
-    for item in files:
-        parts = item.get("path", "").strip("/").split("/")
-        if len(parts) < 3 or parts[:2] != ["user", "home"]:
-            raise ValueError("save manifest has an invalid owner path")
-        if parts[2].lower() != user_id:
-            raise ValueError(
-                f"cross-user upload is blocked to prevent save corruption: save belongs to {parts[2]}, not {user_id}"
-            )
-
-
 def validate_payload(path, entry_id, item):
     try:
         header = bytearray.fromhex(item["header"])
@@ -56,7 +45,8 @@ def validate_payload(path, entry_id, item):
             f"(manifest={manifest_size}, GFP5={header_size})",
             flush=True,
         )
-    struct.pack_into("<Q", header, 240, actual_size)
+    struct.pack_into("<Q", header, 0x20, actual_size)
+    struct.pack_into("<Q", header, 0xF0, actual_size)
     item["header"] = header.hex()
     item["size"] = actual_size
     digest = hashlib.sha256()
@@ -90,8 +80,6 @@ def load_manifest(assets, entry_id=None, expected_user_id=None):
     final_header = entry.get("final_header")
     if not files:
         raise ValueError(f"save manifest for entry {entry_id} contains no files")
-    if expected_user_id is not None:
-        validate_save_owner(files, expected_user_id)
     if not final_header:
         raise ValueError(f"entry {entry_id} lacks a GFP5 final header; redownload it with this version")
     for item in files:
@@ -196,8 +184,21 @@ def infer_title_id(title_id, files):
     raise ValueError("title ID must be exactly 9 letters or digits")
 
 
-def create_metadata(output, user_id, title_id, entry_id, assets, user_name="user", manifest_output=None):
+def find_downloaded_user(source_metadata, user_id):
+    if not source_metadata:
+        return None
+    db = sqlite3.connect(source_metadata)
+    try:
+        return db.execute(
+            "SELECT * FROM user_info_tbl WHERE user_id = ?", (int(user_id, 16),)
+        ).fetchone()
+    finally:
+        db.close()
+
+
+def create_metadata(output, user_id, title_id, entry_id, assets, user_name="user", manifest_output=None, source_metadata=None):
     user_id = validate_user(user_id, user_name)
+    target_user = find_downloaded_user(source_metadata, user_id)
     entry_id, upload_entry = load_manifest(assets, entry_id, expected_user_id=user_id)
     files = upload_entry["files"]
     title_id = infer_title_id(title_id, files)
@@ -210,16 +211,30 @@ def create_metadata(output, user_id, title_id, entry_id, assets, user_name="user
 
     output = Path(output).expanduser()
     output.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(TEMPLATE, output)
+    shutil.copyfile(source_metadata or TEMPLATE, output)
     db = sqlite3.connect(output)
     try:
         db.execute("DELETE FROM user_info_tbl")
         db.execute("DELETE FROM users_savedata_tbl")
         db.execute("DELETE FROM dir_entry_info_tbl")
-        db.execute(
-            "INSERT INTO user_info_tbl VALUES (?, ?, 0, 0, ?, ?, '', 'np', 1, 1, 0, ?, 1, 1)",
-            (int(user_id, 16), user_name, user_name, user_name, uuid.uuid4().hex[:16]),
-        )
+        db.execute("DELETE FROM app_info_tbl")
+        db.execute("DELETE FROM app_service_ac_tbl")
+        db.execute("DELETE FROM app_service_fgc_tbl")
+        db.execute("DELETE FROM capture_info_tbl")
+        if target_user:
+            transfer_user = list(target_user)
+            transfer_user[7] = "np"
+            transfer_user[8] = 1
+            transfer_user[9] = 1
+            transfer_user[10] = 0
+            transfer_user[12] = 1
+            transfer_user[13] = 1
+            db.execute("INSERT INTO user_info_tbl VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", transfer_user)
+        else:
+            db.execute(
+                "INSERT INTO user_info_tbl VALUES (?, ?, 0, 0, ?, ?, '', 'np', 1, 1, 0, ?, 1, 1)",
+                (int(user_id, 16), user_name, user_name, user_name, uuid.uuid4().hex[:16]),
+            )
         db.execute(
             "INSERT INTO users_savedata_tbl VALUES (?, ?, ?, ?, ?, 1, 1, 0, ?)",
             (int(user_id, 16), title_id, title_id, total_size, bu_size, int(time.time())),
@@ -237,7 +252,7 @@ def create_metadata(output, user_id, title_id, entry_id, assets, user_name="user
     return output
 
 
-def create_external_save(output, user_id, title_id, image_path, assets, user_name="user", manifest_output=None):
+def create_external_save(output, user_id, title_id, image_path, assets, user_name="user", manifest_output=None, source_metadata=None):
     user_id = validate_user(user_id, user_name)
     title_id = title_id.upper()
     if not re.fullmatch(r"[A-Z0-9]{9}", title_id):
@@ -256,7 +271,12 @@ def create_external_save(output, user_id, title_id, image_path, assets, user_nam
     header = bytearray(1304)
     struct.pack_into("<I", header, 0, 0x35504647)
     struct.pack_into("<I", header, 4, entry_id)
-    struct.pack_into("<Q", header, 240, destination.stat().st_size)
+    # GFP5 repeats file size in the leading record and stat fields.
+    size = destination.stat().st_size
+    struct.pack_into("<Q", header, 0x20, size)
+    struct.pack_into("<Q", header, 0xF0, size)
+    # S_IFREG | 0600: a regular private save file, not a host OS mode.
+    struct.pack_into("<H", header, 0x110, 0x8180)
     header[276:276 + len(source_path)] = source_path.encode()
     final_header = bytearray(1304)
     struct.pack_into("<I", final_header, 0, 0x35504647)
@@ -275,7 +295,9 @@ def create_external_save(output, user_id, title_id, image_path, assets, user_nam
         str(entry_id): {"files": [item], "final_header": final_header.hex()},
     }
     (entry_directory / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    return create_metadata(output, user_id, title_id, entry_id, assets, user_name, manifest_output)
+    return create_metadata(
+        output, user_id, title_id, entry_id, assets, user_name, manifest_output, source_metadata
+    )
 
 
 def target_path(source_path, user_id):
@@ -436,7 +458,7 @@ def main():
     if args.external_image:
         path = create_external_save(
             args.output, args.user_id, args.title_id, args.external_image,
-            args.assets, args.user_name, args.manifest_output,
+            args.assets, args.user_name, args.manifest_output, args.source,
         )
     elif args.other:
         if not args.source:

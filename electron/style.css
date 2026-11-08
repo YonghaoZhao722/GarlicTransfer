@@ -34,6 +34,9 @@ button:disabled { opacity: .45; cursor: default; }
 .console-picker label { flex: 1; min-width: 220px; }
 .other-drawer { margin-top: 16px; }
 .other-drawer > summary, .other-category > summary { cursor: pointer; color: #b8c7d9; font-size: 13px; font-weight: 600; }
+.manual-console { flex-basis: 100%; margin-top: 0; }
+.manual-fields { display: flex; align-items: flex-end; gap: 12px; margin-top: 10px; }
+.manual-fields label { flex: 1; }
 .other-category { margin: 10px 0 0 14px; }
 .other-category .table-wrap { margin-top: 8px; }
 .actions { display: flex; gap: 12px; margin-bottom: 16px; }
