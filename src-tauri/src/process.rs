@@ -14,6 +14,26 @@ use std::thread;
 use std::time::Duration;
 use tauri::{AppHandle, State};
 
+#[cfg(unix)]
+fn user_id() -> u32 {
+    unsafe { libc::getuid() }
+}
+
+#[cfg(not(unix))]
+fn user_id() -> u32 {
+    0
+}
+
+#[cfg(unix)]
+fn group_id() -> u32 {
+    unsafe { libc::getgid() }
+}
+
+#[cfg(not(unix))]
+fn group_id() -> u32 {
+    0
+}
+
 fn text(options: &Value, key: &str) -> String {
     options
         .get(key)
@@ -408,7 +428,7 @@ fn pair_worker(
         ensure_oracle(&app, &state, &paths, &mut options)?;
         let python_bin = paths.python_bin();
         let mut command;
-        if cfg!(target_os = "linux") && unsafe { libc::getuid() } != 0 {
+        if cfg!(target_os = "linux") && user_id() != 0 {
             command = Command::new("pkexec");
             command
                 .arg("/usr/bin/env")
@@ -416,8 +436,8 @@ fn pair_worker(
                     "PYTHONPATH={}",
                     paths.resource_root.to_string_lossy()
                 ))
-                .arg(format!("DT_PAIRING_UID={}", unsafe { libc::getuid() }))
-                .arg(format!("DT_PAIRING_GID={}", unsafe { libc::getgid() }))
+                .arg(format!("DT_PAIRING_UID={}", user_id()))
+                .arg(format!("DT_PAIRING_GID={}", group_id()))
                 .arg(python_bin)
                 .arg("-u")
                 .arg("-m")
@@ -688,14 +708,8 @@ fn upload_worker(
             env.insert(key.to_string(), value);
         }
         if !cfg!(windows) {
-            env.insert(
-                "DT_PAIRING_UID".to_string(),
-                unsafe { libc::getuid() }.to_string(),
-            );
-            env.insert(
-                "DT_PAIRING_GID".to_string(),
-                unsafe { libc::getgid() }.to_string(),
-            );
+            env.insert("DT_PAIRING_UID".to_string(), user_id().to_string());
+            env.insert("DT_PAIRING_GID".to_string(), group_id().to_string());
         }
         if !text(&options, "advertiseAddress").is_empty() {
             env.insert(
@@ -710,7 +724,7 @@ fn upload_worker(
             );
         }
         let needs_root = cfg!(target_os = "linux")
-            && unsafe { libc::getuid() } != 0
+            && user_id() != 0
             && [
                 number(&options, "sourcePort", 1004),
                 number(&options, "dataPort", 1005),
