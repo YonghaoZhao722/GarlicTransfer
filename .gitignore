@@ -14,3 +14,10 @@ out/
 poc/bin/
 .DS_Store
 build/python/
+.tooling/
+src-tauri/target/
+src-tauri/gen/schemas/
+dt-app-dump/
+poc/windows-v028/
+poc/wine-prefix/
+savedata-*.db

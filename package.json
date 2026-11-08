@@ -15,13 +15,17 @@
   "main": "electron/main.cjs",
   "scripts": {
     "start": "electron .",
-    "check": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/renderer.js && node --check electron/remote_oracle.cjs && node --check electron/config.cjs && node --check electron/discovery.cjs && node --check electron/titles.cjs && node --check electron/paths.cjs && node --check electron/pairing_store.cjs",
+    "start:tauri": "tauri dev",
+    "check": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/renderer.js && node --check electron/tauri_bridge.js && node --check electron/remote_oracle.cjs && node --check electron/config.cjs && node --check electron/discovery.cjs && node --check electron/titles.cjs && node --check electron/paths.cjs && node --check electron/pairing_store.cjs && node --check scripts/package-tauri-portable.cjs",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win",
     "dist:mac": "electron-builder --mac",
-    "dist:linux": "electron-builder --linux"
+    "dist:linux": "electron-builder --linux",
+    "dist:tauri": "tauri build",
+    "portable:tauri": "tauri build --no-bundle && node scripts/package-tauri-portable.cjs"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.12.4",
     "electron": "28.3.3",
     "electron-builder": "24.13.3"
   },
@@ -44,7 +48,9 @@
       {
         "from": "data",
         "to": "data",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "requirements.txt",
@@ -53,19 +59,25 @@
       {
         "from": "build/windows-python",
         "to": "python",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "build/linux",
         "to": "build/linux",
-        "filter": ["*.policy"]
+        "filter": [
+          "*.policy"
+        ]
       }
     ],
     "win": {
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "extraFiles": [
@@ -85,7 +97,9 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["universal"]
+          "arch": [
+            "universal"
+          ]
         }
       ],
       "category": "public.app-category.utilities",
@@ -95,11 +109,15 @@
       "target": [
         {
           "target": "deb",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "AppImage",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "category": "Utility",

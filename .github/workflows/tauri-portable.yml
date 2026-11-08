@@ -1,0 +1,56 @@
+name: Tauri portable builds
+
+on:
+  push:
+    branches: [tauri-port]
+  workflow_dispatch:
+
+jobs:
+  portable:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win32
+            artifact: windows-x64
+          - os: ubuntu-latest
+            platform: linux
+            artifact: linux-x64
+          - os: macos-latest
+            platform: darwin
+            artifact: macos
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux WebKit
+        if: ${{ matrix.platform == 'linux' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev
+      - name: Bundle Windows Python
+        if: ${{ matrix.platform == 'win32' }}
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip' -OutFile build/python-embed.zip
+          Expand-Archive -Path build/python-embed.zip -DestinationPath build/windows-python -Force
+          python -m pip download --only-binary=:all: --python-version 312 --platform win_amd64 'cryptography==44.0.3' --dest build/wheels
+          Get-ChildItem build/wheels/*.whl | ForEach-Object { Expand-Archive -Path $_.FullName -DestinationPath build/windows-python -Force }
+          Add-Content -Path build/windows-python/python312._pth -Value '..'
+          Copy-Item -Recurse poc build/poc
+          & build/windows-python/python.exe -c "import cffi; from cryptography.hazmat.primitives import cmac; print(cryptography.__version__)"
+          & build/windows-python/python.exe -c "import poc.dt_discovery; print('discovery import ok')"
+      - run: npm ci
+      - run: npx tauri build --no-bundle
+      - run: node scripts/package-tauri-portable.cjs ${{ matrix.platform }}
+      - uses: actions/upload-artifact@v4
+        if: ${{ github.server_url == 'https://github.com' }}
+        with:
+          name: tauri-portable-${{ matrix.artifact }}
+          path: |
+            dist/tauri/*.zip
+            dist/tauri/*.tar.gz
