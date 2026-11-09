@@ -1,6 +1,8 @@
 # GarlicTransfer
 
-**Alpha release — 0.2.16**
+Upload and Download PS5 saves to a latest firmware console. Without a jailbreak.
+
+**Alpha release — 0.2.18**
 
 GarlicTransfer is an Electron application for downloading PS5 save containers to a PC and uploading selected saves back to a console through Sony's Data Transfer protocol. It supports local PPR oracles on a jailbroken PS5 and volunteer workers through HTOS.
 
@@ -112,19 +114,6 @@ Downloaded entry folders contain the save containers and a manifest with paths, 
 
 The source power signal is sent automatically after one second. Upload generates a filtered metadata database containing one user and only the selected save entries.
 
-## Firmware mapping
-
-The DDP `system-version` determines both the command protocol and power-body firmware value:
-
-| Firmware | Command protocol |
-| --- | --- |
-| 1.02 | `0x010` |
-| 13.60 | `0x130` |
-| 14.22 | `0x140` |
-| 15.00 | `0x150` |
-| 21.00 | `0x210` |
-
-Only 13.x/14.x are live-verified. The remaining mappings are inferred from the major-version pattern.
 
 ## Development checks
 
