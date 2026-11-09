@@ -28,6 +28,13 @@ for asset in "$@"; do
                 "$API/releases/$release_id/assets/$asset_id"
         done
     encoded_name=$(python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$name")
-    curl -fsS -X POST -H "Authorization: token $TOKEN" \
-        -F "attachment=@$asset" "$API/releases/$release_id/assets?name=$encoded_name"
+    if [ "$(wc -c < "$asset")" -gt 100000000 ]; then
+        curl -fsS -X POST -H "Authorization: token $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"external_url\":\"https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${encoded_name}\"}" \
+            "$API/releases/$release_id/assets?name=$encoded_name"
+    else
+        curl -fsS -X POST -H "Authorization: token $TOKEN" \
+            -F "attachment=@$asset" "$API/releases/$release_id/assets?name=$encoded_name"
+    fi
 done
