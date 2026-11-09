@@ -6,6 +6,7 @@ import os
 import socket
 import sqlite3
 import struct
+import time
 from pathlib import Path
 
 from poc.dt_ppr_client import derive_with_oracle
@@ -112,14 +113,16 @@ class DtChannel:
 
 def download_metadata(channel, output):
     sub = channel.request(0xA0, struct.pack("<Q", 11))
-    for _ in range(16):
+    deadline = time.monotonic() + 120
+    while True:
         result, _ = channel.response(0xA0, sub)
         if result == 0:
             break
         if result != 0x23:
             raise ValueError(f"A0 failed: {result:#x}")
-    else:
-        raise ValueError("A0 did not complete")
+        if time.monotonic() >= deadline:
+            raise ValueError("A0 did not complete")
+        time.sleep(0.25)
 
     sub = channel.request(0xB2, struct.pack("<II", 1, 1))
     result, metadata = channel.response(0xB2, sub)
