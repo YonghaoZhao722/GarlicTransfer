@@ -112,7 +112,7 @@ Downloaded entry folders contain the save containers and a manifest with paths, 
 5. Confirm in GarlicTransfer and authenticate the backend if prompted.
 6. On the console, open **Settings → System → System Software → Data Transfer**, press **Continue**, select **GarlicTransfer**, then **Start transfer**.
 
-The source power signal is sent automatically after one second. Upload generates a filtered metadata database containing one user and only the selected save entries.
+The source power signal is sent automatically after one second. If the PS5 asks you to press the **source console** power button during upload, wait for GarlicTransfer to acknowledge it; do not press the destination PS5 power button. This differs from downloading, where you may need to press the physical PS5 power button. Upload generates a filtered metadata database containing one user and only the selected save entries.
 
 
 ## Development checks

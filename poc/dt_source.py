@@ -383,100 +383,107 @@ def data_server(listener, oracle_host, oracle_port):
         client, address = listener.accept()
         print(f"[data] connection from {address}", flush=True)
         with client:
-            client.settimeout(310)
-            client_value = recv_exact(client, 64)[:16]
-            server_value = os.urandom(16)
-            client.sendall(server_value + bytes(48))
-            recv_key, send_key, recv_nonce, send_nonce = derive_session(
-                client, oracle_host, oracle_port, client_value, server_value
-            )
-            completion = recv_record(client, recv_key, recv_nonce, 0)
-            print(f"[data] completion: {completion.hex()}", flush=True)
-            sequence = 1
-            send_sequence = 0
-            while True:
-                header = recv_record(client, recv_key, recv_nonce, sequence)
+            try:
+                serve_data(client, oracle_host, oracle_port)
+            except (EOFError, ConnectionError, TimeoutError) as exc:
+                print(f"[data] connection ended: {exc}", flush=True)
+
+
+def serve_data(client, oracle_host, oracle_port):
+    client.settimeout(310)
+    client_value = recv_exact(client, 64)[:16]
+    server_value = os.urandom(16)
+    client.sendall(server_value + bytes(48))
+    recv_key, send_key, recv_nonce, send_nonce = derive_session(
+        client, oracle_host, oracle_port, client_value, server_value
+    )
+    completion = recv_record(client, recv_key, recv_nonce, 0)
+    print(f"[data] completion: {completion.hex()}", flush=True)
+    sequence = 1
+    send_sequence = 0
+    while True:
+        header = recv_record(client, recv_key, recv_nonce, sequence)
+        sequence += 1
+        cmd, sub, version, flags, size = struct.unpack("<BBHIQ", header)
+        print(f"[data] cmd={cmd:#x} sub={sub} version={version:#x} body={size}", flush=True)
+        if cmd == 0x92:
+            response = struct.pack("<BBHIQ", cmd, sub, version, 0, size)
+            send_record(client, send_key, send_nonce, send_sequence, response)
+            send_sequence += 1
+            remaining = size
+            while remaining:
+                chunk = recv_record(client, recv_key, recv_nonce, sequence)
                 sequence += 1
-                cmd, sub, version, flags, size = struct.unpack("<BBHIQ", header)
-                print(f"[data] cmd={cmd:#x} sub={sub} version={version:#x} body={size}", flush=True)
-                if cmd == 0x92:
-                    response = struct.pack("<BBHIQ", cmd, sub, version, 0, size)
-                    send_record(client, send_key, send_nonce, send_sequence, response)
+                send_record(client, send_key, send_nonce, send_sequence, chunk)
+                send_sequence += 1
+                remaining -= len(chunk)
+            break
+        body = b""
+        if size and cmd != 0x92:
+            body, sequence = recv_body(client, recv_key, recv_nonce, sequence, size)
+            print(f"[data] body ({len(body)} bytes): {body.hex()}", flush=True)
+        if cmd == 0xA0:
+            for result in (0x23, 0x23, 0x23, 0x23, 0x23, 0x23, 0):
+                response = struct.pack("<BBHIQ", cmd, sub, version, result, 0)
+                send_record(client, send_key, send_nonce, send_sequence, response)
+                send_sequence += 1
+        elif cmd == 0xB2:
+            file_type = struct.unpack_from("<I", body, 0)[0]
+            if file_type == 1:
+                metadata = Path(METADATA_PATH).read_bytes()
+                response = struct.pack("<BBHIQ", cmd, sub, version, 0, len(metadata))
+                send_record(client, send_key, send_nonce, send_sequence, response)
+                send_sequence += 1
+                for offset in range(0, len(metadata), 0x200000):
+                    send_record(client, send_key, send_nonce, send_sequence, metadata[offset:offset + 0x200000])
                     send_sequence += 1
-                    remaining = size
-                    while remaining:
-                        chunk = recv_record(client, recv_key, recv_nonce, sequence)
-                        sequence += 1
-                        send_record(client, send_key, send_nonce, send_sequence, chunk)
-                        send_sequence += 1
-                        remaining -= len(chunk)
-                    break
-                body = b""
-                if size and cmd != 0x92:
-                    body, sequence = recv_body(client, recv_key, recv_nonce, sequence, size)
-                    print(f"[data] body ({len(body)} bytes): {body.hex()}", flush=True)
-                if cmd == 0xA0:
-                    for result in (0x23, 0x23, 0x23, 0x23, 0x23, 0x23, 0):
-                        response = struct.pack("<BBHIQ", cmd, sub, version, result, 0)
-                        send_record(client, send_key, send_nonce, send_sequence, response)
-                        send_sequence += 1
-                elif cmd == 0xB2:
-                    file_type = struct.unpack_from("<I", body, 0)[0]
-                    if file_type == 1:
-                        metadata = Path(METADATA_PATH).read_bytes()
-                        response = struct.pack("<BBHIQ", cmd, sub, version, 0, len(metadata))
-                        send_record(client, send_key, send_nonce, send_sequence, response)
-                        send_sequence += 1
-                        for offset in range(0, len(metadata), 0x200000):
-                            send_record(client, send_key, send_nonce, send_sequence, metadata[offset:offset + 0x200000])
-                            send_sequence += 1
-                    else:
-                        response = struct.pack("<BBHIQ", cmd, sub, version, 0, 0)
-                        send_record(client, send_key, send_nonce, send_sequence, response)
-                        send_sequence += 1
-                        file_id = struct.unpack_from("<I", body, 4)[0]
-                        send_sequence = send_save_chunks(
-                            client, send_key, send_nonce, send_sequence, file_type, file_id
-                        )
-                elif cmd == 0x92:
-                    response = struct.pack("<BBHIQ", cmd, sub, version, 0, len(body))
-                    send_record(client, send_key, send_nonce, send_sequence, response)
-                    send_sequence += 1
-                    for offset in range(0, len(body), 0x200000):
-                        send_record(client, send_key, send_nonce, send_sequence, body[offset:offset + 0x200000])
-                        send_sequence += 1
-                    break
-                elif cmd == 0xB4:
-                    key = struct.unpack_from("<I", body)[0]
-                    value_size = struct.unpack_from("<Q", body, 8)[0]
-                    value = struct.pack("<I", 1) if key == 0x02020000 else bytes(value_size)
-                    print(f"[data] GRP5 key={key:#x} size={value_size}", flush=True)
-                    response = struct.pack("<BBHIQ", cmd, sub, version, 0, 0)
-                    send_record(client, send_key, send_nonce, send_sequence, response)
-                    send_sequence += 1
-                    descriptor = struct.pack("<I", 0x35505247) + body[:4] + struct.pack("<Q", body[4]) + body[8:16]
-                    send_record(client, send_key, send_nonce, send_sequence, descriptor)
-                    send_sequence += 1
-                    send_record(client, send_key, send_nonce, send_sequence, value)
-                    send_sequence += 1
-                elif cmd == 0xB5:
-                    value = user_registry_value(body)
-                    response = struct.pack("<BBHIQ", cmd, sub, version, 0, 0)
-                    send_record(client, send_key, send_nonce, send_sequence, response)
-                    send_sequence += 1
-                    descriptor = struct.pack("<I", 0x35525547) + body[:12] + body[16:]
-                    send_record(client, send_key, send_nonce, send_sequence, descriptor)
-                    send_sequence += 1
-                    send_record(client, send_key, send_nonce, send_sequence, value)
-                    send_sequence += 1
-                elif cmd in (0xB1, 0xB3):
-                    response = struct.pack("<BBHIQ", cmd, sub, version, 0, 0)
-                    send_record(client, send_key, send_nonce, send_sequence, response)
-                    send_sequence += 1
-                    if cmd == 0xB3:
-                        break
-                else:
-                    break
+            else:
+                response = struct.pack("<BBHIQ", cmd, sub, version, 0, 0)
+                send_record(client, send_key, send_nonce, send_sequence, response)
+                send_sequence += 1
+                file_id = struct.unpack_from("<I", body, 4)[0]
+                send_sequence = send_save_chunks(
+                    client, send_key, send_nonce, send_sequence, file_type, file_id
+                )
+        elif cmd == 0x92:
+            response = struct.pack("<BBHIQ", cmd, sub, version, 0, len(body))
+            send_record(client, send_key, send_nonce, send_sequence, response)
+            send_sequence += 1
+            for offset in range(0, len(body), 0x200000):
+                send_record(client, send_key, send_nonce, send_sequence, body[offset:offset + 0x200000])
+                send_sequence += 1
+            break
+        elif cmd == 0xB4:
+            key = struct.unpack_from("<I", body)[0]
+            value_size = struct.unpack_from("<Q", body, 8)[0]
+            value = struct.pack("<I", 1) if key == 0x02020000 else bytes(value_size)
+            print(f"[data] GRP5 key={key:#x} size={value_size}", flush=True)
+            response = struct.pack("<BBHIQ", cmd, sub, version, 0, 0)
+            send_record(client, send_key, send_nonce, send_sequence, response)
+            send_sequence += 1
+            descriptor = struct.pack("<I", 0x35505247) + body[:4] + struct.pack("<Q", body[4]) + body[8:16]
+            send_record(client, send_key, send_nonce, send_sequence, descriptor)
+            send_sequence += 1
+            send_record(client, send_key, send_nonce, send_sequence, value)
+            send_sequence += 1
+        elif cmd == 0xB5:
+            value = user_registry_value(body)
+            response = struct.pack("<BBHIQ", cmd, sub, version, 0, 0)
+            send_record(client, send_key, send_nonce, send_sequence, response)
+            send_sequence += 1
+            descriptor = struct.pack("<I", 0x35525547) + body[:12] + body[16:]
+            send_record(client, send_key, send_nonce, send_sequence, descriptor)
+            send_sequence += 1
+            send_record(client, send_key, send_nonce, send_sequence, value)
+            send_sequence += 1
+        elif cmd in (0xB1, 0xB3):
+            response = struct.pack("<BBHIQ", cmd, sub, version, 0, 0)
+            send_record(client, send_key, send_nonce, send_sequence, response)
+            send_sequence += 1
+            if cmd == 0xB3:
+                break
+        else:
+            break
 
 
 def main():
