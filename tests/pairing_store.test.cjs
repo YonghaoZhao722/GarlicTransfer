@@ -49,8 +49,8 @@ test('upload button opens dismissible console instructions', () => {
   const root = path.join(__dirname, '..');
   const html = fs.readFileSync(path.join(root, 'electron', 'index.html'), 'utf8');
   const renderer = fs.readFileSync(path.join(root, 'electron', 'renderer.js'), 'utf8');
-  assert.match(html, /id="confirmUploadBtn"[^>]*>Upload save<\/button>/);
-  assert.match(html, /id="uploadModal"[\s\S]*?Delete the selected save data[\s\S]*?GarlicTransfer[\s\S]*?import the data/);
+  assert.match(html, /id="confirmUploadBtn"[^>]*>Upload<\/button>/);
+  assert.match(html, /id="uploadModal"[\s\S]*?If replacing an existing save, delete it on the PS5\.[\s\S]*?GarlicTransfer[\s\S]*?import the data/);
   assert.doesNotMatch(html, /Delete selected original saves and start upload/);
   assert.match(renderer, /activeTransfer = 'upload';\s*showUploadModal\(\);/);
   assert.match(renderer, /uploadModalCloseBtn\.addEventListener\('click', hideUploadModal\)/);

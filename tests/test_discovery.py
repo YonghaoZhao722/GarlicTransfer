@@ -1,3 +1,4 @@
+import errno
 import socket
 import threading
 import unittest
@@ -11,7 +12,13 @@ class DiscoveryRouteTests(unittest.TestCase):
 
     def add_server(self, address, port=0):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.bind((address, port))
+        try:
+            sock.bind((address, port))
+        except OSError as exc:
+            sock.close()
+            if exc.errno == errno.EADDRNOTAVAIL:
+                self.skipTest(f"loopback address {address} is not configured")
+            raise
         sock.settimeout(0.1)
         self.servers.append(sock)
 
