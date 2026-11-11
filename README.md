@@ -115,6 +115,9 @@ Downloaded entry folders contain the save containers and a manifest with paths, 
 The source power signal is sent automatically after one second. Upload generates a filtered metadata database containing one user and only the selected save entries.
 
 
+A [macOS / PS5 14.22 field report](docs/macos-ps5-14.22-report.md) records a tested
+backend workflow and its validation limits.
+
 ## Development checks
 
 ```bash
